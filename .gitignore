@@ -1,0 +1,8 @@
+pums_*.zip
+pums_*.zip.part
+pums_dict_*.csv
+data.json
+.DS_Store
+__pycache__/
+*.pyc
+.claude/

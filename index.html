@@ -1,0 +1,507 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Random American</title>
+<style>
+  :root {
+    --bg: #f5f3ee;
+    --card: #ffffff;
+    --ink: #1a1a1a;
+    --muted: #6b6b6b;
+    --accent: #b22234;
+    --accent-2: #3c3b6e;
+    --line: #e6e2d8;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--ink); }
+  body {
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    min-height: 100vh;
+    display: flex; flex-direction: column; align-items: center;
+    padding: 32px 16px 64px;
+  }
+  header { max-width: 640px; width: 100%; text-align: center; margin-bottom: 24px; }
+  h1 { font-family: ui-serif, "Iowan Old Style", Georgia, serif; font-size: 36px; margin: 0 0 6px; letter-spacing: -0.01em; }
+  .tagline { color: var(--muted); font-size: 14px; margin: 0; }
+  button.generate {
+    margin: 24px 0 12px;
+    background: var(--accent); color: white; border: none;
+    font-size: 17px; font-weight: 600; padding: 14px 28px;
+    border-radius: 999px; cursor: pointer; letter-spacing: 0.02em;
+    box-shadow: 0 2px 0 #7a1722;
+    transition: transform 0.05s, box-shadow 0.05s;
+  }
+  button.generate:hover { filter: brightness(1.05); }
+  button.generate:active { transform: translateY(1px); box-shadow: 0 1px 0 #7a1722; }
+  button.generate:disabled { background: #888; box-shadow: 0 2px 0 #555; cursor: progress; }
+  .card {
+    max-width: 640px; width: 100%;
+    background: var(--card); border: 1px solid var(--line);
+    border-radius: 14px; padding: 28px 28px 24px;
+    box-shadow: 0 1px 0 rgba(0,0,0,0.02), 0 8px 24px -16px rgba(0,0,0,0.18);
+    min-height: 200px;
+  }
+  .name { font-family: ui-serif, "Iowan Old Style", Georgia, serif; font-size: 30px; margin: 0 0 2px; letter-spacing: -0.01em; }
+  .subline { color: var(--muted); font-size: 15px; margin: 0 0 18px; }
+  .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 24px; }
+  @media (max-width: 480px) { .grid { grid-template-columns: 1fr; } h1 { font-size: 30px; } .name { font-size: 26px; } }
+  .field { display: flex; flex-direction: column; gap: 2px; }
+  .label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+  .value { font-size: 15.5px; line-height: 1.35; }
+  .value.big { font-weight: 600; }
+  .value.dim { color: var(--muted); font-style: italic; }
+  .hh-section { margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--line); }
+  .hh-list { margin: 6px 0 0; padding: 0; list-style: none; }
+  .hh-list li { padding: 4px 0; font-size: 15px; line-height: 1.35; }
+  .hh-list li strong { font-weight: 600; }
+  .hh-empty { color: var(--muted); font-size: 15px; font-style: italic; margin-top: 4px; }
+  .footer-note { max-width: 640px; width: 100%; margin-top: 18px; color: var(--muted); font-size: 12px; text-align: center; line-height: 1.5; }
+  .footer-note a { color: var(--accent-2); }
+  .stripe {
+    height: 4px; width: 100%; max-width: 640px;
+    background: linear-gradient(to right, var(--accent) 0%, var(--accent) 50%, var(--accent-2) 50%, var(--accent-2) 100%);
+    border-radius: 4px; margin-bottom: 24px;
+  }
+  .loading { color: var(--muted); text-align: center; padding: 60px 0; }
+</style>
+</head>
+<body>
+  <header>
+    <h1>Meet a Random American</h1>
+    <p class="tagline">Drawn from the US Census Bureau's 2020–2024 American Community Survey microdata.</p>
+  </header>
+  <div class="stripe"></div>
+  <button class="generate" id="gen" disabled>Loading…</button>
+  <div class="card" id="card" aria-live="polite">
+    <div class="loading">Loading 30,000 anonymized records…</div>
+  </div>
+  <div class="footer-note">
+    Each card is one real (anonymized) person from the ACS Public Use Microdata Sample,
+    so age, race, location, occupation, income, education, marital status, and household
+    children all jointly co-occur exactly as they do in the US population. Names are
+    fabricated for display; nothing else is.
+  </div>
+
+<script src="data.js"></script>
+<script>
+// ===== Name pools =====
+// First names by sex (common US names from SSA + various decades)
+const NAMES_F = [
+  "Mary","Patricia","Jennifer","Linda","Elizabeth","Barbara","Susan","Jessica","Sarah","Karen",
+  "Lisa","Nancy","Betty","Sandra","Margaret","Ashley","Kimberly","Emily","Donna","Michelle",
+  "Carol","Amanda","Melissa","Deborah","Stephanie","Dorothy","Rebecca","Sharon","Laura","Cynthia",
+  "Amy","Kathleen","Angela","Shirley","Brenda","Pamela","Nicole","Katherine","Samantha","Christine",
+  "Helen","Debra","Rachel","Carolyn","Janet","Maria","Catherine","Heather","Diane","Olivia",
+  "Julie","Joyce","Victoria","Ruth","Virginia","Lauren","Kelly","Christina","Joan","Evelyn",
+  "Judith","Andrea","Hannah","Megan","Cheryl","Jacqueline","Martha","Madison","Teresa","Gloria",
+  "Sara","Janice","Ann","Kathryn","Abigail","Sophia","Frances","Jean","Alice","Judy","Isabella",
+  "Julia","Grace","Amber","Denise","Danielle","Marilyn","Beverly","Charlotte","Natalie","Theresa",
+  "Diana","Brittany","Doris","Kayla","Alexis","Lori","Marie","Emma","Mia","Ava"
+];
+const NAMES_M = [
+  "James","Robert","John","Michael","David","William","Richard","Joseph","Thomas","Charles",
+  "Christopher","Daniel","Matthew","Anthony","Mark","Donald","Steven","Andrew","Paul","Joshua",
+  "Kenneth","Kevin","Brian","George","Edward","Ronald","Timothy","Jason","Jeffrey","Ryan",
+  "Jacob","Gary","Nicholas","Eric","Stephen","Jonathan","Larry","Justin","Scott","Brandon",
+  "Frank","Benjamin","Gregory","Samuel","Raymond","Patrick","Alexander","Jack","Dennis","Jerry",
+  "Tyler","Aaron","Henry","Douglas","Peter","Adam","Nathan","Zachary","Walter","Kyle",
+  "Harold","Jeremy","Ethan","Carl","Keith","Roger","Gerald","Christian","Terry","Sean",
+  "Arthur","Austin","Noah","Lawrence","Jesse","Joe","Bryan","Billy","Jordan","Albert",
+  "Dylan","Bruce","Willie","Gabriel","Logan","Alan","Juan","Wayne","Roy","Ralph",
+  "Randy","Eugene","Vincent","Russell","Elijah","Louis","Bobby","Philip","Johnny","Mason"
+];
+const NAMES_HISP_F = ["Maria","Sofia","Camila","Valentina","Isabella","Gabriela","Lucia","Daniela","Carmen","Rosa","Ana","Elena","Adriana","Mariana","Patricia","Guadalupe","Yolanda","Esperanza","Consuelo","Marisol"];
+const NAMES_HISP_M = ["Jose","Juan","Luis","Carlos","Miguel","Diego","Mateo","Sebastian","Daniel","Alejandro","Manuel","Antonio","Francisco","Jesus","Rafael","Pedro","Ricardo","Fernando","Eduardo","Hector"];
+
+const SURNAMES = [
+  "Smith","Johnson","Williams","Brown","Jones","Miller","Davis","Wilson","Anderson","Thomas",
+  "Taylor","Moore","Jackson","Martin","Lee","Thompson","White","Harris","Clark","Lewis",
+  "Robinson","Walker","Young","Allen","King","Wright","Scott","Hill","Green","Adams",
+  "Nelson","Baker","Hall","Campbell","Mitchell","Carter","Roberts","Phillips","Evans","Turner",
+  "Parker","Edwards","Collins","Stewart","Morris","Murphy","Cook","Rogers","Morgan","Cooper",
+  "Peterson","Bailey","Reed","Kelly","Howard","Cox","Ward","Richardson","Watson","Brooks",
+  "Wood","James","Bennett","Gray","Hughes","Price","Sanders","Long","Ross","Foster",
+  "Powell","Jenkins","Perry","Russell","Sullivan","Bell","Coleman","Butler","Henderson","Barnes"
+];
+const SURNAMES_HISP = [
+  "Garcia","Rodriguez","Martinez","Hernandez","Lopez","Gonzalez","Perez","Sanchez","Ramirez","Torres",
+  "Flores","Rivera","Gomez","Diaz","Cruz","Reyes","Morales","Ortiz","Gutierrez","Chavez",
+  "Ramos","Ruiz","Alvarez","Mendoza","Vasquez","Castillo","Jimenez","Moreno","Romero","Herrera",
+  "Medina","Aguilar","Vargas","Fernandez","Guzman","Munoz","Salazar","Soto","Delgado","Castro"
+];
+const SURNAMES_ASIAN = [
+  "Nguyen","Kim","Patel","Lee","Tran","Pham","Chen","Wang","Wong","Le",
+  "Liu","Park","Choi","Yang","Singh","Zhang","Shah","Huang","Lin","Cho",
+  "Gupta","Lam","Tang","Khan","Truong","Vu","Sharma","Bhatt","Iyer","Reddy"
+];
+const SURNAMES_BLACK = [
+  "Johnson","Williams","Brown","Jones","Smith","Davis","Jackson","Robinson","Thompson","Harris",
+  "Lewis","Walker","Wright","Young","Anderson","Thomas","White","Mitchell","Scott","Hill",
+  "Carter","Mosley","Washington","Jefferson","Banks","Booker","Dixon","Joseph","Henderson","Bryant"
+];
+
+function pickName(sex, race) {
+  // sex: 1=male, 0=female
+  const isMale = sex === 1;
+  let firstPool, surPool;
+  if (race === "Hispanic or Latino") {
+    firstPool = isMale ? NAMES_HISP_M : NAMES_HISP_F;
+    surPool = SURNAMES_HISP;
+  } else if (race === "Asian") {
+    firstPool = isMale ? NAMES_M : NAMES_F;
+    surPool = SURNAMES_ASIAN;
+  } else if (race === "Black or African American") {
+    firstPool = isMale ? NAMES_M : NAMES_F;
+    surPool = SURNAMES_BLACK;
+  } else {
+    firstPool = isMale ? NAMES_M : NAMES_F;
+    surPool = SURNAMES;
+  }
+  const first = firstPool[Math.floor(Math.random() * firstPool.length)];
+  const last = surPool[Math.floor(Math.random() * surPool.length)];
+  return first + " " + last;
+}
+
+// ===== Render =====
+function moneyFmt(n) {
+  if (n === 0) return "$0";
+  if (n < 0) return "−$" + Math.abs(n).toLocaleString("en-US");
+  return "$" + n.toLocaleString("en-US");
+}
+
+// Translate RELSHIPP of another HH member into "what they are to the sampled person."
+// myRel = sampled person's RELSHIPP, theirRel = other member's RELSHIPP, theirSex = 1 male 0 female.
+function describeRelation(myRel, theirRel, theirSex) {
+  const M = theirSex === 1;
+  const son = M ? "Son" : "Daughter";
+  const bro = M ? "Brother" : "Sister";
+  const fa = M ? "Father" : "Mother";
+  const gson = M ? "Grandson" : "Granddaughter";
+  const gpar = M ? "Grandfather" : "Grandmother";
+  const sonil = M ? "Son-in-law" : "Daughter-in-law";
+  const broil = M ? "Brother-in-law" : "Sister-in-law";
+  const fail = M ? "Father-in-law" : "Mother-in-law";
+  const nep = M ? "Nephew" : "Niece";
+  const uncle = M ? "Uncle" : "Aunt";
+  const husb = M ? "Husband" : "Wife";
+
+  // Householder
+  if (myRel === 20) {
+    if (theirRel === 21 || theirRel === 23) return husb;
+    if (theirRel === 22 || theirRel === 24) return "Partner";
+    if (theirRel === 25 || theirRel === 26 || theirRel === 27) return son;
+    if (theirRel === 28) return bro;
+    if (theirRel === 29) return fa;
+    if (theirRel === 30) return gson;
+    if (theirRel === 31) return fail;
+    if (theirRel === 32) return sonil;
+    if (theirRel === 33) return "Relative";
+    if (theirRel === 34) return "Roommate";
+    if (theirRel === 35) return M ? "Foster son" : "Foster daughter";
+    if (theirRel === 36) return "Housemate";
+    return "Fellow resident";
+  }
+  // Married spouse
+  if (myRel === 21 || myRel === 23) {
+    if (theirRel === 20) return husb;
+    if (theirRel === 25 || theirRel === 26 || theirRel === 27) return son;
+    if (theirRel === 28) return broil;
+    if (theirRel === 29) return fail;
+    if (theirRel === 30) return gson;
+    if (theirRel === 31) return fa;
+    if (theirRel === 32) return sonil;
+    if (theirRel === 33) return "Relative";
+    if (theirRel === 34) return "Roommate";
+    if (theirRel === 35) return M ? "Foster son" : "Foster daughter";
+    if (theirRel === 36) return "Housemate";
+    return "Housemate";
+  }
+  // Unmarried partner
+  if (myRel === 22 || myRel === 24) {
+    if (theirRel === 20) return "Partner";
+    if (theirRel === 25 || theirRel === 26 || theirRel === 27) return "Partner's " + (M ? "son" : "daughter");
+    if (theirRel === 28) return "Partner's " + (M ? "brother" : "sister");
+    if (theirRel === 29) return "Partner's " + (M ? "father" : "mother");
+    if (theirRel === 30) return "Partner's " + (M ? "grandson" : "granddaughter");
+    if (theirRel === 33) return "Partner's relative";
+    if (theirRel === 34) return "Roommate";
+    return "Housemate";
+  }
+  // Child of householder
+  if (myRel === 25 || myRel === 26 || myRel === 27) {
+    if (theirRel === 20) return fa;
+    if (theirRel === 21 || theirRel === 23) return fa;
+    if (theirRel === 22 || theirRel === 24) return "Parent's partner";
+    if (theirRel === 25 || theirRel === 26 || theirRel === 27) return bro;
+    if (theirRel === 28) return uncle;
+    if (theirRel === 29) return gpar;
+    if (theirRel === 30) return nep;
+    if (theirRel === 33) return "Relative";
+    if (theirRel === 34) return "Roommate";
+    if (theirRel === 35) return M ? "Foster brother" : "Foster sister";
+    return "Housemate";
+  }
+  // Sibling of householder
+  if (myRel === 28) {
+    if (theirRel === 20) return bro;
+    if (theirRel === 21 || theirRel === 23) return broil;
+    if (theirRel === 25 || theirRel === 26 || theirRel === 27) return nep;
+    if (theirRel === 29) return fa;
+    if (theirRel === 28) return bro;
+    return "Relative";
+  }
+  // Parent of householder
+  if (myRel === 29) {
+    if (theirRel === 20) return son;
+    if (theirRel === 21 || theirRel === 23) return sonil;
+    if (theirRel === 25 || theirRel === 26 || theirRel === 27) return gson;
+    if (theirRel === 28) return son;
+    if (theirRel === 29) return husb;
+    return "Relative";
+  }
+  // Grandchild of householder
+  if (myRel === 30) {
+    if (theirRel === 20 || theirRel === 21 || theirRel === 23) return gpar;
+    if (theirRel === 25 || theirRel === 26 || theirRel === 27) return uncle;
+    if (theirRel === 30) return bro;
+    return "Relative";
+  }
+  // Parent-in-law
+  if (myRel === 31) {
+    if (theirRel === 20) return sonil;
+    if (theirRel === 21 || theirRel === 23) return son;
+    if (theirRel === 25 || theirRel === 26 || theirRel === 27) return gson;
+    return "Relative";
+  }
+  // Child-in-law
+  if (myRel === 32) {
+    if (theirRel === 20) return fail;
+    if (theirRel === 21 || theirRel === 23) return fa;
+    if (theirRel === 25 || theirRel === 26 || theirRel === 27) return broil;
+    return "Relative";
+  }
+  // Other relative
+  if (myRel === 33) return "Relative";
+  // Roommate
+  if (myRel === 34 || myRel === 36) return "Housemate";
+  // Foster child
+  if (myRel === 35) {
+    if (theirRel === 20 || theirRel === 21 || theirRel === 23) return M ? "Foster father" : "Foster mother";
+    if (theirRel === 25 || theirRel === 26 || theirRel === 27) return M ? "Foster brother" : "Foster sister";
+    if (theirRel === 35) return M ? "Foster brother" : "Foster sister";
+    return "Housemate";
+  }
+  // Group quarters
+  if (myRel === 37 || myRel === 38) return "Fellow resident";
+  return "Housemate";
+}
+
+// Singularize occupation labels. Walks backward and singularizes the last plural
+// word in each "and"/comma-separated segment, so "Brokers and Sales Agents" -> "Broker and Sales Agent".
+function singularizeWord(w) {
+  if (w.endsWith("ies") && w.length > 3) return w.slice(0, -3) + "y";
+  if (w.endsWith("sses")) return w.slice(0, -2);
+  if (/(ches|shes|xes|zes)$/.test(w)) return w.slice(0, -2);
+  if (w.endsWith("s") && !w.endsWith("ss") && !w.endsWith("us") && w.length > 2) return w.slice(0, -1);
+  return null;
+}
+function singularizeSegment(s) {
+  const parts = s.split(/(\s|[\/\-])/);
+  for (let i = parts.length - 1; i >= 0; i--) {
+    const w = parts[i];
+    if (!/^[a-zA-Z]/.test(w)) continue;
+    const sing = singularizeWord(w);
+    if (sing !== null) { parts[i] = sing; break; }
+    // word isn't plural — keep walking back to find one
+  }
+  return parts.join("");
+}
+function singularize(s) {
+  if (!s) return s;
+  // Split on commas or " and " so each segment can be singularized independently
+  return s.split(/(\s*,\s*|\s+and\s+)/)
+    .map((seg, i) => (i % 2 === 1) ? seg : singularizeSegment(seg))
+    .join("");
+}
+
+function describeMember(m, myRel) {
+  // m: decoded member object {age, sex, race, occupation, employment, relshipp, income}
+  const rel = describeRelation(myRel, m.relshipp, m.sex);
+  const parts = [String(m.age), m.race];
+  if (m.occupation) {
+    parts.push(singularize(m.occupation).toLowerCase());
+  } else if (m.age < 5) {
+    parts.push("not yet in school");
+  } else if (m.age < 18) {
+    parts.push("in school");
+  } else if (m.employment === "Unemployed") {
+    parts.push("unemployed");
+  } else if (m.employment === "Not in labor force" && m.age >= 62) {
+    parts.push("retired");
+  } else if (m.employment === "Not in labor force") {
+    parts.push("not in the labor force");
+  }
+  return `<strong>${rel}</strong> — ${parts.join(", ")}`;
+}
+
+function describeKids(person) {
+  // own_kids: number of own children of householder living in HH, attributed to this person.
+  // -1 means we don't know (not the householder or married spouse).
+  const k = person.own_kids;
+  const rel = person.relshipp;
+  if (k === 0 && (rel === 20 || rel === 21 || rel === 23)) return "None at home";
+  if (k > 0) return k === 1 ? "1 child at home" : `${k} children at home`;
+  // For others: characterize their living situation instead
+  if ([25, 26, 27].includes(rel)) return "Lives with parent(s)";
+  if (rel === 35) return "Foster child";
+  if (rel === 30) return "Lives with grandparent(s)";
+  if ([28, 29, 31, 32, 33].includes(rel)) return "Lives with relatives";
+  if ([22, 24].includes(rel)) return "Lives with partner";
+  if ([34, 36].includes(rel)) return "Lives with non-relatives";
+  if ([37, 38].includes(rel)) return "Lives in group quarters";
+  return "—";
+}
+
+function render(p) {
+  const card = document.getElementById("card");
+  const sex = p.sex === 1 ? "Male" : "Female";
+  const name = pickName(p.sex, p.race);
+  const sexWord = p.age < 13 ? (p.sex === 1 ? "boy" : "girl")
+                : p.age < 20 ? (p.sex === 1 ? "young man" : "young woman")
+                : (p.sex === 1 ? "man" : "woman");
+
+  // Occupation: if null, show employment status text instead
+  let occText, occBig = true;
+  if (p.occupation) {
+    occText = singularize(p.occupation);
+  } else if (p.age < 16) {
+    occText = "—"; occBig = false;
+  } else if (p.employment === "Unemployed") {
+    occText = "(unemployed)"; occBig = false;
+  } else if (p.employment === "Not in labor force") {
+    if (p.age >= 62) { occText = "(retired / not employed)"; }
+    else if (p.age < 22) { occText = "(student or not employed)"; }
+    else { occText = "(not in the labor force)"; }
+    occBig = false;
+  } else {
+    occText = "—"; occBig = false;
+  }
+
+  const empText = p.employment || (p.age < 16 ? "Under 16" : "—");
+  const isInSchoolLabel = p.education && /(grade|kindergarten|preschool)$/i.test(p.education);
+  let eduText;
+  if (!p.education) eduText = p.age < 5 ? "Not yet in school" : "—";
+  else if (isInSchoolLabel && p.age < 19) eduText = "Currently in " + p.education;
+  else eduText = p.education;
+  const hhIncomeText = moneyFmt(p.hh_income || 0);
+  const marText = p.marital || "—";
+  const incomeText = (p.age < 15 && p.income === 0) ? "—" : moneyFmt(p.income);
+
+  const fields = [
+    ["Age", `${p.age} years old`, "big"],
+    ["Sex", sex, ""],
+    ["Race / ethnicity", p.race, ""],
+    ["State", p.state, ""],
+    ["Occupation", occText, occBig ? "big" : "dim"],
+    ["Employment status", empText, ""],
+    ["Annual income", incomeText, "big"],
+    ["Household income", hhIncomeText, ""],
+    ["Education", eduText, ""],
+    ["Marital status", marText, ""],
+    ["Children", describeKids(p), ""],
+  ];
+
+  // "Lives with" section
+  const others = p.hh_members || [];
+  let livesWith;
+  if (p.relshipp === 37 || p.relshipp === 38) {
+    livesWith = `<div class="hh-empty">In group quarters with ${others.length} other resident${others.length === 1 ? "" : "s"}.</div>`;
+  } else if (others.length === 0) {
+    livesWith = `<div class="hh-empty">Lives alone.</div>`;
+  } else {
+    // Sort: spouse/partner first, then by age desc
+    const sorted = others.slice().sort((a, b) => {
+      const spA = [21,22,23,24].includes(a.relshipp) ? 0 : 1;
+      const spB = [21,22,23,24].includes(b.relshipp) ? 0 : 1;
+      if (spA !== spB) return spA - spB;
+      // Then children grouped: 25/26/27 next
+      const chA = [25,26,27,35].includes(a.relshipp) ? 0 : 1;
+      const chB = [25,26,27,35].includes(b.relshipp) ? 0 : 1;
+      if (chA !== chB) return chA - chB;
+      return b.age - a.age;
+    });
+    livesWith = `<ul class="hh-list">${sorted.map(m => `<li>${describeMember(m, p.relshipp)}</li>`).join("")}</ul>`;
+  }
+
+  card.innerHTML = `
+    <h2 class="name">${name}</h2>
+    <p class="subline">${sex}, ${p.age}, ${sexWord} from ${p.state}</p>
+    <div class="grid">
+      ${fields.map(([label, value, cls]) => `
+        <div class="field">
+          <div class="label">${label}</div>
+          <div class="value ${cls}">${value}</div>
+        </div>
+      `).join("")}
+    </div>
+    <div class="hh-section">
+      <div class="label">Lives with</div>
+      ${livesWith}
+    </div>
+  `;
+}
+
+function decodeRow(rowArr, payload) {
+  const f = payload.fields;
+  const r = {};
+  for (let i = 0; i < f.length; i++) r[f[i]] = rowArr[i];
+  // Apply lookup tables
+  r.race = r.race >= 0 ? payload.races[r.race] : null;
+  r.state = r.state >= 0 ? payload.states[r.state] : null;
+  r.education = r.education >= 0 ? payload.educations[r.education] : null;
+  r.marital = r.marital >= 0 ? payload.marital[r.marital] : null;
+  r.occupation = r.occupation >= 0 ? payload.occupations[r.occupation] : null;
+  r.employment = r.employment >= 0 ? payload.employments[r.employment] : null;
+  // Decode household members
+  const mf = payload.member_fields;  // ["age","sex","race","occupation","employment","relshipp","income"]
+  r.hh_members = (r.hh_members || []).map(mt => {
+    const m = {};
+    for (let i = 0; i < mf.length; i++) m[mf[i]] = mt[i];
+    m.race = m.race >= 0 ? payload.races[m.race] : null;
+    m.occupation = m.occupation >= 0 ? payload.occupations[m.occupation] : null;
+    m.employment = m.employment >= 0 ? payload.employments[m.employment] : null;
+    return m;
+  });
+  return r;
+}
+
+function generateOne() {
+  const data = window.PUMS;
+  if (!data || !data.rows || !data.rows.length) return;
+  const idx = Math.floor(Math.random() * data.rows.length);
+  const person = decodeRow(data.rows[idx], data);
+  render(person);
+}
+
+// Init
+function init() {
+  if (window.PUMS && window.PUMS.rows) {
+    const btn = document.getElementById("gen");
+    btn.textContent = "Generate a person";
+    btn.disabled = false;
+    btn.addEventListener("click", generateOne);
+    generateOne();
+  } else {
+    document.getElementById("card").innerHTML = `
+      <div class="loading">
+        Couldn't load <code>data.js</code>.<br>
+        Run <code>python3 build_data.py</code> to generate it.
+      </div>`;
+  }
+}
+document.addEventListener("DOMContentLoaded", init);
+</script>
+</body>
+</html>
