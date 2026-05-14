@@ -6,15 +6,19 @@ We weighted-reservoir-sample 30k rows (weight = PWGTP) so the sample's joint
 distributions match the population's by construction. Output: data.json.
 """
 
-import csv, heapq, io, json, os, random, re, sys, urllib.request, zipfile
+import bisect, csv, heapq, io, json, os, random, re, sys, urllib.request, zipfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 PUMS_URL = "https://www2.census.gov/programs-surveys/acs/data/pums/2024/5-Year/csv_pus.zip"
 HH_URL = "https://www2.census.gov/programs-surveys/acs/data/pums/2024/5-Year/csv_hus.zip"
 DICT_URL = "https://www2.census.gov/programs-surveys/acs/tech_docs/pums/data_dict/PUMS_Data_Dictionary_2020-2024.csv"
+# SSA blocks scripted downloads, so we use the Wayback Machine snapshot.
+SSA_URL = "https://web.archive.org/web/2025/https://www.ssa.gov/oact/babynames/names.zip"
 PUMS_LOCAL = os.path.join(HERE, "pums_2020_2024.zip")
 HH_LOCAL = os.path.join(HERE, "pums_hh_2020_2024.zip")
 DICT_LOCAL = os.path.join(HERE, "pums_dict_2020_2024.csv")
+SSA_LOCAL = os.path.join(HERE, "ssa_names.zip")
+SURVEY_YEAR = 2022  # midpoint of 2020-2024 5-year ACS
 DATA_JSON = os.path.join(HERE, "data.json")
 DATA_JS = os.path.join(HERE, "data.js")
 N_TARGET = 30000
@@ -149,6 +153,50 @@ def clean_occ(label):
     return "".join(out)
 
 
+def load_ssa_names(ssa_zip_path):
+    """Returns {(year, "M"|"F"): (names_list, cumulative_weights)}.
+    Walking the cumulative weights with bisect gives a frequency-weighted sample."""
+    import bisect
+    pools = {}
+    years = []
+    with zipfile.ZipFile(ssa_zip_path) as zf:
+        for name in zf.namelist():
+            m = re.match(r"yob(\d{4})\.txt$", name)
+            if not m: continue
+            year = int(m.group(1))
+            years.append(year)
+            names_m, weights_m, acc_m = [], [], 0
+            names_f, weights_f, acc_f = [], [], 0
+            with zf.open(name) as f:
+                for raw_line in io.TextIOWrapper(f, encoding="utf-8"):
+                    parts = raw_line.strip().split(",")
+                    if len(parts) != 3: continue
+                    n, s, c = parts[0], parts[1], int(parts[2])
+                    if s == "M":
+                        acc_m += c
+                        names_m.append(n); weights_m.append(acc_m)
+                    else:
+                        acc_f += c
+                        names_f.append(n); weights_f.append(acc_f)
+            pools[(year, "M")] = (names_m, weights_m)
+            pools[(year, "F")] = (names_f, weights_f)
+    sys.stderr.write(f"SSA names loaded: years {min(years)}-{max(years)}, {len(pools)} (year,sex) pools\n")
+    return pools, min(years), max(years)
+
+
+def pick_first_name(pools, year_min, year_max, sex_str, age):
+    import bisect
+    yr = max(year_min, min(year_max, SURVEY_YEAR - age))
+    sex = "M" if sex_str == "1" else "F"
+    pool = pools.get((yr, sex))
+    if not pool or not pool[1]:
+        return None
+    names, cw = pool
+    total = cw[-1]
+    r = random.randint(1, total)
+    return names[bisect.bisect_left(cw, r)]
+
+
 def load_hh_housing(hh_zip_path, wanted_serialnos):
     """Stream the household file and pull housing data for the wanted SERIALNOs."""
     out = {}
@@ -180,6 +228,8 @@ def main():
     download(DICT_URL, DICT_LOCAL)
     download(PUMS_URL, PUMS_LOCAL)
     download(HH_URL, HH_LOCAL)
+    download(SSA_URL, SSA_LOCAL)
+    name_pools, ssa_year_min, ssa_year_max = load_ssa_names(SSA_LOCAL)
 
     labels = parse_value_labels(DICT_LOCAL)
     occp_labels = {c: clean_occ(l) for c, l in labels.get("OCCP", {}).items()}
@@ -319,6 +369,7 @@ def main():
         try: age = int(r.get("AGEP", ""))
         except ValueError: continue
         sex = 1 if r.get("SEX") == "1" else 0  # 1=Male, 0=Female
+        first_name = pick_first_name(name_pools, ssa_year_min, ssa_year_max, r.get("SEX", ""), age) or ""
         race = race_eth(r.get("RAC1P", ""), r.get("HISP", ""))
         state = STATE_FIPS.get(r.get("STATE", ""), "Unknown")
         edu = schl_label(r.get("SCHL", ""))
@@ -422,6 +473,7 @@ def main():
             intern(eng_dict, english_ability),
             intern(ten_dict, tenure),
             home_value, monthly_rent, bedrooms,
+            first_name,
         ])
 
     def invert(d):
@@ -436,6 +488,7 @@ def main():
             "field_of_degree","industry","is_veteran","is_active_duty","has_disability",
             "citizenship","year_of_entry","language","english_ability","tenure",
             "home_value","monthly_rent","bedrooms",
+            "first_name",
         ],
         "member_fields": ["age","sex","race","occupation","employment","relshipp","income"],
         "races": invert(races_dict),

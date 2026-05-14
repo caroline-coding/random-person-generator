@@ -87,34 +87,9 @@
 <script src="data.js"></script>
 <script>
 // ===== Name pools =====
-// First names by sex (common US names from SSA + various decades)
-const NAMES_F = [
-  "Mary","Patricia","Jennifer","Linda","Elizabeth","Barbara","Susan","Jessica","Sarah","Karen",
-  "Lisa","Nancy","Betty","Sandra","Margaret","Ashley","Kimberly","Emily","Donna","Michelle",
-  "Carol","Amanda","Melissa","Deborah","Stephanie","Dorothy","Rebecca","Sharon","Laura","Cynthia",
-  "Amy","Kathleen","Angela","Shirley","Brenda","Pamela","Nicole","Katherine","Samantha","Christine",
-  "Helen","Debra","Rachel","Carolyn","Janet","Maria","Catherine","Heather","Diane","Olivia",
-  "Julie","Joyce","Victoria","Ruth","Virginia","Lauren","Kelly","Christina","Joan","Evelyn",
-  "Judith","Andrea","Hannah","Megan","Cheryl","Jacqueline","Martha","Madison","Teresa","Gloria",
-  "Sara","Janice","Ann","Kathryn","Abigail","Sophia","Frances","Jean","Alice","Judy","Isabella",
-  "Julia","Grace","Amber","Denise","Danielle","Marilyn","Beverly","Charlotte","Natalie","Theresa",
-  "Diana","Brittany","Doris","Kayla","Alexis","Lori","Marie","Emma","Mia","Ava"
-];
-const NAMES_M = [
-  "James","Robert","John","Michael","David","William","Richard","Joseph","Thomas","Charles",
-  "Christopher","Daniel","Matthew","Anthony","Mark","Donald","Steven","Andrew","Paul","Joshua",
-  "Kenneth","Kevin","Brian","George","Edward","Ronald","Timothy","Jason","Jeffrey","Ryan",
-  "Jacob","Gary","Nicholas","Eric","Stephen","Jonathan","Larry","Justin","Scott","Brandon",
-  "Frank","Benjamin","Gregory","Samuel","Raymond","Patrick","Alexander","Jack","Dennis","Jerry",
-  "Tyler","Aaron","Henry","Douglas","Peter","Adam","Nathan","Zachary","Walter","Kyle",
-  "Harold","Jeremy","Ethan","Carl","Keith","Roger","Gerald","Christian","Terry","Sean",
-  "Arthur","Austin","Noah","Lawrence","Jesse","Joe","Bryan","Billy","Jordan","Albert",
-  "Dylan","Bruce","Willie","Gabriel","Logan","Alan","Juan","Wayne","Roy","Ralph",
-  "Randy","Eugene","Vincent","Russell","Elijah","Louis","Bobby","Philip","Johnny","Mason"
-];
-const NAMES_HISP_F = ["Maria","Sofia","Camila","Valentina","Isabella","Gabriela","Lucia","Daniela","Carmen","Rosa","Ana","Elena","Adriana","Mariana","Patricia","Guadalupe","Yolanda","Esperanza","Consuelo","Marisol"];
-const NAMES_HISP_M = ["Jose","Juan","Luis","Carlos","Miguel","Diego","Mateo","Sebastian","Daniel","Alejandro","Manuel","Antonio","Francisco","Jesus","Rafael","Pedro","Ricardo","Fernando","Eduardo","Hector"];
-
+// First names are baked into each row from SSA's yearly counts (build-time, weighted
+// by frequency, conditioned on birth year + sex). Surnames are drawn from these pools
+// at render time, lightly conditioned on race.
 const SURNAMES = [
   "Smith","Johnson","Williams","Brown","Jones","Miller","Davis","Wilson","Anderson","Thomas",
   "Taylor","Moore","Jackson","Martin","Lee","Thompson","White","Harris","Clark","Lewis",
@@ -142,26 +117,18 @@ const SURNAMES_BLACK = [
   "Carter","Mosley","Washington","Jefferson","Banks","Booker","Dixon","Joseph","Henderson","Bryant"
 ];
 
-function pickName(sex, race) {
-  // sex: 1=male, 0=female
-  const isMale = sex === 1;
-  let firstPool, surPool;
-  if (race === "Hispanic") {
-    firstPool = isMale ? NAMES_HISP_M : NAMES_HISP_F;
-    surPool = SURNAMES_HISP;
-  } else if (race === "Asian") {
-    firstPool = isMale ? NAMES_M : NAMES_F;
-    surPool = SURNAMES_ASIAN;
-  } else if (race === "Black") {
-    firstPool = isMale ? NAMES_M : NAMES_F;
-    surPool = SURNAMES_BLACK;
-  } else {
-    firstPool = isMale ? NAMES_M : NAMES_F;
-    surPool = SURNAMES;
-  }
-  const first = firstPool[Math.floor(Math.random() * firstPool.length)];
-  const last = surPool[Math.floor(Math.random() * surPool.length)];
-  return first + " " + last;
+// First name comes baked into the row (sampled at build time from SSA's yearly baby-name
+// counts using the person's birth year + sex, weighted by frequency). Surname is still
+// drawn here from a race-correlated pool.
+function pickSurname(race) {
+  if (race === "Hispanic") return SURNAMES_HISP[Math.floor(Math.random() * SURNAMES_HISP.length)];
+  if (race === "Asian") return SURNAMES_ASIAN[Math.floor(Math.random() * SURNAMES_ASIAN.length)];
+  if (race === "Black") return SURNAMES_BLACK[Math.floor(Math.random() * SURNAMES_BLACK.length)];
+  return SURNAMES[Math.floor(Math.random() * SURNAMES.length)];
+}
+function pickName(person) {
+  const first = person.first_name || "(unnamed)";
+  return first + " " + pickSurname(person.race);
 }
 
 // ===== Render =====
@@ -367,7 +334,7 @@ function describeKids(person) {
 function render(p) {
   const card = document.getElementById("card");
   const sex = p.sex === 1 ? "Male" : "Female";
-  const name = pickName(p.sex, p.race);
+  const name = pickName(p);
   const sexWord = p.age < 13 ? (p.sex === 1 ? "boy" : "girl")
                 : p.age < 20 ? (p.sex === 1 ? "young man" : "young woman")
                 : (p.sex === 1 ? "man" : "woman");
