@@ -146,13 +146,13 @@ function pickName(sex, race) {
   // sex: 1=male, 0=female
   const isMale = sex === 1;
   let firstPool, surPool;
-  if (race === "Hispanic or Latino") {
+  if (race === "Hispanic") {
     firstPool = isMale ? NAMES_HISP_M : NAMES_HISP_F;
     surPool = SURNAMES_HISP;
   } else if (race === "Asian") {
     firstPool = isMale ? NAMES_M : NAMES_F;
     surPool = SURNAMES_ASIAN;
-  } else if (race === "Black or African American") {
+  } else if (race === "Black") {
     firstPool = isMale ? NAMES_M : NAMES_F;
     surPool = SURNAMES_BLACK;
   } else {
@@ -399,19 +399,65 @@ function render(p) {
   const marText = p.marital || "—";
   const incomeText = (p.age < 15 && p.income === 0) ? "—" : moneyFmt(p.income);
 
+  // Citizenship + year of entry
+  let citText = p.citizenship || "—";
+  if (p.year_of_entry && (citText.includes("Naturalized") || citText.includes("Not a"))) {
+    citText += ` (arrived ${p.year_of_entry})`;
+  }
+
+  // Language at home (only if non-English)
+  let langText = null;
+  if (p.language) {
+    langText = p.language;
+    if (p.english_ability) langText += ` (speaks English ${p.english_ability})`;
+  }
+
+  // Housing
+  let housingText = null;
+  if (p.tenure) {
+    const parts = [p.tenure.toLowerCase()];
+    if (p.bedrooms > 0) parts.push(`${p.bedrooms} bedroom${p.bedrooms === 1 ? "" : "s"}`);
+    if ((p.tenure.startsWith("Owns")) && p.home_value > 0) parts.push(`valued at ${moneyFmt(p.home_value)}`);
+    if ((p.tenure === "Rents") && p.monthly_rent > 0) parts.push(`${moneyFmt(p.monthly_rent)}/month`);
+    housingText = parts.join(", ");
+    housingText = housingText.charAt(0).toUpperCase() + housingText.slice(1);
+  } else if (p.relshipp === 37 || p.relshipp === 38) {
+    housingText = "Group quarters";
+  }
+
+  // Veteran
+  let veteranText = null;
+  if (p.is_active_duty) veteranText = "Currently on active duty";
+  else if (p.is_veteran) veteranText = "Yes, served on active duty";
+
+  // Disability
+  const disabilityText = p.has_disability ? "Yes" : null;
+
+  // Industry
+  const industryText = p.industry ? singularize(p.industry) : null;
+
+  // Field of degree (only meaningful for bachelor's+)
+  const fodText = p.field_of_degree || null;
+
   const fields = [
     ["Age", `${p.age} years old`, "big"],
     ["Sex", sex, ""],
     ["Race / ethnicity", p.race, ""],
     ["State", p.state, ""],
+    ["Citizenship", citText, ""],
+    langText ? ["Language at home", langText, ""] : null,
     ["Occupation", occText, occBig ? "big" : "dim"],
+    industryText ? ["Industry", industryText, ""] : null,
     ["Employment status", empText, ""],
     ["Annual income", incomeText, "big"],
     ["Household income", hhIncomeText, ""],
     ["Education", eduText, ""],
+    fodText ? ["Field of degree", fodText, ""] : null,
     ["Marital status", marText, ""],
-    ["Children", describeKids(p), ""],
-  ];
+    housingText ? ["Housing", housingText, ""] : null,
+    veteranText ? ["Veteran", veteranText, ""] : null,
+    disabilityText ? ["Has a disability", disabilityText, ""] : null,
+  ].filter(Boolean);
 
   // "Lives with" section
   const others = p.hh_members || [];
@@ -437,7 +483,6 @@ function render(p) {
 
   card.innerHTML = `
     <h2 class="name">${name}</h2>
-    <p class="subline">${sex}, ${p.age}, ${sexWord} from ${p.state}</p>
     <div class="grid">
       ${fields.map(([label, value, cls]) => `
         <div class="field">
@@ -453,23 +498,38 @@ function render(p) {
   `;
 }
 
+// Shorten Census race labels for display
+const RACE_SHORTEN = {
+  "Black or African American": "Black",
+  "Hispanic or Latino": "Hispanic",
+  "Native Hawaiian or Pacific Islander": "Pacific Islander",
+  "American Indian and Alaska Native": "Native American",
+};
+function shortenRace(r) { return r ? (RACE_SHORTEN[r] || r) : r; }
+
 function decodeRow(rowArr, payload) {
   const f = payload.fields;
   const r = {};
   for (let i = 0; i < f.length; i++) r[f[i]] = rowArr[i];
   // Apply lookup tables
-  r.race = r.race >= 0 ? payload.races[r.race] : null;
+  r.race = r.race >= 0 ? shortenRace(payload.races[r.race]) : null;
   r.state = r.state >= 0 ? payload.states[r.state] : null;
   r.education = r.education >= 0 ? payload.educations[r.education] : null;
   r.marital = r.marital >= 0 ? payload.marital[r.marital] : null;
   r.occupation = r.occupation >= 0 ? payload.occupations[r.occupation] : null;
   r.employment = r.employment >= 0 ? payload.employments[r.employment] : null;
+  r.field_of_degree = r.field_of_degree >= 0 ? payload.fields_of_degree[r.field_of_degree] : null;
+  r.industry = r.industry >= 0 ? payload.industries[r.industry] : null;
+  r.citizenship = r.citizenship >= 0 ? payload.citizenships[r.citizenship] : null;
+  r.language = r.language >= 0 ? payload.languages[r.language] : null;
+  r.english_ability = r.english_ability >= 0 ? payload.english_abilities[r.english_ability] : null;
+  r.tenure = r.tenure >= 0 ? payload.tenures[r.tenure] : null;
   // Decode household members
   const mf = payload.member_fields;  // ["age","sex","race","occupation","employment","relshipp","income"]
   r.hh_members = (r.hh_members || []).map(mt => {
     const m = {};
     for (let i = 0; i < mf.length; i++) m[mf[i]] = mt[i];
-    m.race = m.race >= 0 ? payload.races[m.race] : null;
+    m.race = m.race >= 0 ? shortenRace(payload.races[m.race]) : null;
     m.occupation = m.occupation >= 0 ? payload.occupations[m.occupation] : null;
     m.employment = m.employment >= 0 ? payload.employments[m.employment] : null;
     return m;

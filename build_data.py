@@ -10,17 +10,21 @@ import csv, heapq, io, json, os, random, re, sys, urllib.request, zipfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 PUMS_URL = "https://www2.census.gov/programs-surveys/acs/data/pums/2024/5-Year/csv_pus.zip"
+HH_URL = "https://www2.census.gov/programs-surveys/acs/data/pums/2024/5-Year/csv_hus.zip"
 DICT_URL = "https://www2.census.gov/programs-surveys/acs/tech_docs/pums/data_dict/PUMS_Data_Dictionary_2020-2024.csv"
 PUMS_LOCAL = os.path.join(HERE, "pums_2020_2024.zip")
+HH_LOCAL = os.path.join(HERE, "pums_hh_2020_2024.zip")
 DICT_LOCAL = os.path.join(HERE, "pums_dict_2020_2024.csv")
 DATA_JSON = os.path.join(HERE, "data.json")
 DATA_JS = os.path.join(HERE, "data.js")
 N_TARGET = 30000
+HH_COLS = ("TEN", "VALP", "RNTP", "BDSP", "NP")
 
 KEEP_COLS = [
     "SERIALNO", "AGEP", "SEX", "RAC1P", "HISP", "STATE", "PUMA",
-    "SCHL", "MAR", "OCCP", "PINCP", "WAGP", "ESR",
+    "SCHL", "FOD1P", "MAR", "OCCP", "INDP", "PINCP", "WAGP", "ESR",
     "OC", "RELSHIPP", "PWGTP",
+    "MIL", "DIS", "CIT", "NATIVITY", "YOEP", "LANP", "ENG",
 ]
 
 
@@ -81,6 +85,21 @@ ESR_MAP = {
     "4":"Armed forces (at work)","5":"Armed forces (not at work)","6":"Not in labor force",
 }
 
+CIT_MAP = {
+    "1": "Born in the US",
+    "2": "Born in a US territory",
+    "3": "Born abroad to US citizen parent(s)",
+    "4": "Naturalized US citizen",
+    "5": "Not a US citizen",
+}
+ENG_MAP = {"1":"very well","2":"well","3":"not well","4":"not at all"}
+TEN_MAP = {
+    "1": "Owns with mortgage",
+    "2": "Owns free and clear",
+    "3": "Rents",
+    "4": "Occupies without paying rent",
+}
+
 _GRADE_NAMES = {
     4:"1st grade", 5:"2nd grade", 6:"3rd grade", 7:"4th grade",
     8:"5th grade", 9:"6th grade", 10:"7th grade", 11:"8th grade",
@@ -130,12 +149,43 @@ def clean_occ(label):
     return "".join(out)
 
 
+def load_hh_housing(hh_zip_path, wanted_serialnos):
+    """Stream the household file and pull housing data for the wanted SERIALNOs."""
+    out = {}
+    with zipfile.ZipFile(hh_zip_path) as zf:
+        csv_files = sorted(n for n in zf.namelist() if n.endswith(".csv"))
+        sys.stderr.write(f"HH CSVs: {csv_files}\n")
+        for name in csv_files:
+            sys.stderr.write(f"Scanning {name}...\n")
+            with zf.open(name) as f:
+                text = io.TextIOWrapper(f, encoding="utf-8", newline="")
+                reader = csv.reader(text)
+                header = next(reader)
+                idx = {h: i for i, h in enumerate(header)}
+                sni = idx["SERIALNO"]
+                col_idx = {c: idx[c] for c in HH_COLS if c in idx}
+                n = 0
+                for row in reader:
+                    sno = row[sni]
+                    if sno in wanted_serialnos:
+                        out[sno] = {c: row[i] for c, i in col_idx.items()}
+                    n += 1
+                    if n % 1_000_000 == 0:
+                        sys.stderr.write(f"  {n:,} HH rows scanned; matched {len(out):,}/{len(wanted_serialnos):,}\n")
+    sys.stderr.write(f"Matched {len(out):,}/{len(wanted_serialnos):,} households\n")
+    return out
+
+
 def main():
     download(DICT_URL, DICT_LOCAL)
     download(PUMS_URL, PUMS_LOCAL)
+    download(HH_URL, HH_LOCAL)
 
     labels = parse_value_labels(DICT_LOCAL)
     occp_labels = {c: clean_occ(l) for c, l in labels.get("OCCP", {}).items()}
+    indp_labels = {c: clean_occ(l) for c, l in labels.get("INDP", {}).items()}
+    fod_labels = {c: l for c, l in labels.get("FOD1P", {}).items()}
+    lanp_labels = {c: l for c, l in labels.get("LANP", {}).items()}
 
     heap = []  # (key, tie, raw_row + HH context)
     tie = 0
@@ -218,11 +268,17 @@ def main():
                 sys.stderr.write(f"  done {csv_name}: {n:,} rows\n")
 
     sys.stderr.write(f"\nReservoir: {len(heap)} rows. Total PWGTP sum: {pwgtp_sum/1e6:.1f}M\n")
+    # Join in housing data from HH file
+    wanted = {r["SERIALNO"] for _, _, r in heap if "SERIALNO" in r}
+    sys.stderr.write(f"Looking up {len(wanted):,} households in HH file...\n")
+    hh_housing = load_hh_housing(HH_LOCAL, wanted)
     sys.stderr.write("Decoding...\n")
 
     # Dictionary-encode categorical columns for compactness.
     races_dict, states_dict, edu_dict = {}, {}, {}
     mar_dict, occ_dict, emp_dict = {}, {}, {}
+    fod_dict, ind_dict, cit_dict = {}, {}, {}
+    lang_dict, eng_dict, ten_dict = {}, {}, {}
 
     def intern(d, v):
         if v is None: return -1
@@ -298,6 +354,53 @@ def main():
         hh_income = r.get("__hh_income", 0)
         hh_others = [decode_member(m) for m in r.get("__hh_others", [])]
 
+        # Field of degree (only meaningful for bachelor's+)
+        fod_code = r.get("FOD1P", "")
+        field_of_degree = fod_labels.get(fod_code) if fod_code and not fod_code.startswith("b") else None
+
+        # Industry (only meaningful if employed / worked recently)
+        ind_code = r.get("INDP", "")
+        if ind_code and not ind_code.startswith("b") and ind_code != "0000":
+            industry = indp_labels.get(ind_code)
+        else:
+            industry = None
+
+        # Veteran status: any past or current military service
+        mil_code = r.get("MIL", "")
+        is_veteran = mil_code in ("1", "2")
+        is_active_duty = mil_code == "1"
+
+        # Disability flag
+        has_disability = r.get("DIS", "") == "1"
+
+        # Citizenship
+        cit_code = r.get("CIT", "")
+        citizenship = CIT_MAP.get(cit_code)
+
+        # Year of entry (foreign-born / naturalized)
+        try: yoep = int(r.get("YOEP", "") or 0)
+        except ValueError: yoep = 0
+
+        # Language at home
+        lanp_code = r.get("LANP", "")
+        if lanp_code and not lanp_code.startswith("b"):
+            language = lanp_labels.get(lanp_code)
+        else:
+            language = None  # English only
+        eng_code = r.get("ENG", "")
+        english_ability = ENG_MAP.get(eng_code) if eng_code and not eng_code.startswith("b") else None
+
+        # Housing — joined from HH file by SERIALNO
+        hh = hh_housing.get(r.get("SERIALNO", ""), {})
+        ten_code = hh.get("TEN", "")
+        tenure = TEN_MAP.get(ten_code) if ten_code and not ten_code.startswith("b") else None
+        try: home_value = int(hh.get("VALP", "") or 0)
+        except ValueError: home_value = 0
+        try: monthly_rent = int(hh.get("RNTP", "") or 0)
+        except ValueError: monthly_rent = 0
+        try: bedrooms = int(hh.get("BDSP", "") or 0)
+        except ValueError: bedrooms = 0
+
         rows.append([
             age, sex,
             intern(races_dict, race),
@@ -308,6 +411,17 @@ def main():
             intern(emp_dict, employment),
             income, wages, own_kids, rel,
             hh_income, hh_others,
+            intern(fod_dict, field_of_degree),
+            intern(ind_dict, industry),
+            1 if is_veteran else 0,
+            1 if is_active_duty else 0,
+            1 if has_disability else 0,
+            intern(cit_dict, citizenship),
+            yoep,
+            intern(lang_dict, language),
+            intern(eng_dict, english_ability),
+            intern(ten_dict, tenure),
+            home_value, monthly_rent, bedrooms,
         ])
 
     def invert(d):
@@ -316,7 +430,13 @@ def main():
         return out
 
     payload = {
-        "fields": ["age","sex","race","state","education","marital","occupation","employment","income","wages","own_kids","relshipp","hh_income","hh_members"],
+        "fields": [
+            "age","sex","race","state","education","marital","occupation","employment",
+            "income","wages","own_kids","relshipp","hh_income","hh_members",
+            "field_of_degree","industry","is_veteran","is_active_duty","has_disability",
+            "citizenship","year_of_entry","language","english_ability","tenure",
+            "home_value","monthly_rent","bedrooms",
+        ],
         "member_fields": ["age","sex","race","occupation","employment","relshipp","income"],
         "races": invert(races_dict),
         "states": invert(states_dict),
@@ -324,6 +444,12 @@ def main():
         "marital": invert(mar_dict),
         "occupations": invert(occ_dict),
         "employments": invert(emp_dict),
+        "fields_of_degree": invert(fod_dict),
+        "industries": invert(ind_dict),
+        "citizenships": invert(cit_dict),
+        "languages": invert(lang_dict),
+        "english_abilities": invert(eng_dict),
+        "tenures": invert(ten_dict),
         "rows": rows,
     }
 
