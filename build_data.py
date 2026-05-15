@@ -14,11 +14,29 @@ HH_URL = "https://www2.census.gov/programs-surveys/acs/data/pums/2024/5-Year/csv
 DICT_URL = "https://www2.census.gov/programs-surveys/acs/tech_docs/pums/data_dict/PUMS_Data_Dictionary_2020-2024.csv"
 # SSA blocks scripted downloads, so we use the Wayback Machine snapshot.
 SSA_URL = "https://web.archive.org/web/2025/https://www.ssa.gov/oact/babynames/names.zip"
+CENSUS_FIRST_URL = "https://www2.census.gov/topics/genealogy/2020surnames/Names2020_FirstNames_RaceHispanic.xlsx"
+CENSUS_LAST_URL = "https://www2.census.gov/topics/genealogy/2020surnames/Names2020_LastNames_RaceHispanic.xlsx"
 PUMS_LOCAL = os.path.join(HERE, "pums_2020_2024.zip")
 HH_LOCAL = os.path.join(HERE, "pums_hh_2020_2024.zip")
 DICT_LOCAL = os.path.join(HERE, "pums_dict_2020_2024.csv")
 SSA_LOCAL = os.path.join(HERE, "ssa_names.zip")
+CENSUS_FIRST_LOCAL = os.path.join(HERE, "census_names", "Names2020_FirstNames_RaceHispanic.xlsx")
+CENSUS_LAST_LOCAL = os.path.join(HERE, "census_names", "Names2020_LastNames_RaceHispanic.xlsx")
 SURVEY_YEAR = 2022  # midpoint of 2020-2024 5-year ACS
+
+# PUMS race label -> Census name file race column index (5..10)
+CENSUS_RACE_COL = {
+    "White": 5,
+    "Black or African American": 6,
+    "American Indian": 7,
+    "Alaska Native": 7,
+    "American Indian and Alaska Native": 7,
+    "Asian": 8,
+    "Native Hawaiian or Pacific Islander": 8,
+    "Two or more races": 9,
+    "Hispanic or Latino": 10,
+    "Some other race": 10,  # default to Hispanic — most non-Hispanic SOR are mixed cultural backgrounds
+}
 DATA_JSON = os.path.join(HERE, "data.json")
 DATA_JS = os.path.join(HERE, "data.js")
 N_TARGET = 30000
@@ -178,6 +196,35 @@ def clean_occ(label):
     return "".join(out)
 
 
+def load_census_names_by_race(xlsx_path):
+    """Returns {race_col_idx: {NAME_UPPER: count}}.
+    Race column indices match CENSUS_RACE_COL values (5..10)."""
+    from openpyxl import load_workbook
+    out = {i: {} for i in range(5, 11)}
+    wb = load_workbook(xlsx_path, read_only=True)
+    ws = wb.active
+    skipped_header = 0
+    for row in ws.iter_rows(values_only=True):
+        if row is None or row[0] is None:
+            if skipped_header < 3: skipped_header += 1
+            continue
+        if not isinstance(row[0], str):
+            continue
+        if skipped_header < 3 and row[0].upper() in ("FIRST NAME", "LAST NAME"):
+            skipped_header = 3
+            continue
+        if skipped_header < 3: continue
+        name = row[0]
+        # Skip the long-tail aggregate row Census uses for non-published names
+        if name.upper() in ("ALL OTHER NAMES", "OTHER NAMES"):
+            continue
+        for col in range(5, 11):
+            val = row[col] if col < len(row) else None
+            if isinstance(val, (int, float)) and val > 0:
+                out[col][name] = int(val)
+    return out
+
+
 def load_ssa_names(ssa_zip_path):
     """Returns {(year, "M"|"F"): (names_list, cumulative_weights)}.
     Walking the cumulative weights with bisect gives a frequency-weighted sample."""
@@ -209,17 +256,67 @@ def load_ssa_names(ssa_zip_path):
     return pools, min(years), max(years)
 
 
-def pick_first_name(pools, year_min, year_max, sex_str, age):
-    import bisect
+_first_name_cache = {}
+def pick_first_name(pools, year_min, year_max, sex_str, age, race, census_first):
+    """Combine SSA (year+sex) with Census (race) so each marginal is approximately right.
+    weight(name) = SSA_count(name|year,sex) * (Census_count(name|race) + 0.5)
+    Cached per (year, sex, race)."""
     yr = max(year_min, min(year_max, SURVEY_YEAR - age))
     sex = "M" if sex_str == "1" else "F"
-    pool = pools.get((yr, sex))
-    if not pool or not pool[1]:
-        return None
+    race_col = CENSUS_RACE_COL.get(race, 5)  # default to White if unmapped
+    key = (yr, sex, race_col)
+    pool = _first_name_cache.get(key)
+    if pool is None:
+        ssa_pool = pools.get((yr, sex))
+        if not ssa_pool or not ssa_pool[1]:
+            _first_name_cache[key] = ([], [])
+            return None
+        ssa_names, ssa_cw = ssa_pool
+        race_dist = census_first.get(race_col, {})
+        names_out, cum = [], []
+        running = 0
+        for i, name in enumerate(ssa_names):
+            ssa_count = ssa_cw[i] - (ssa_cw[i-1] if i > 0 else 0)
+            census_count = race_dist.get(name.upper(), 0)
+            w = ssa_count * (census_count + 0.5)
+            running += w
+            names_out.append(name)
+            cum.append(running)
+        _first_name_cache[key] = (names_out, cum)
+        pool = _first_name_cache[key]
     names, cw = pool
+    if not cw: return None
     total = cw[-1]
-    r = random.randint(1, total)
+    if total <= 0: return None
+    r = random.random() * total
     return names[bisect.bisect_left(cw, r)]
+
+
+_last_name_cache = {}
+def pick_last_name(race, census_last):
+    """Race-conditioned last name from Census 2020 names file."""
+    race_col = CENSUS_RACE_COL.get(race, 5)
+    pool = _last_name_cache.get(race_col)
+    if pool is None:
+        race_dist = census_last.get(race_col, {})
+        if not race_dist:
+            _last_name_cache[race_col] = ([], [])
+            return None
+        items = sorted(race_dist.items(), key=lambda x: -x[1])
+        names, cum = [], []
+        running = 0
+        for n, c in items:
+            running += c
+            names.append(n)
+            cum.append(running)
+        _last_name_cache[race_col] = (names, cum)
+        pool = _last_name_cache[race_col]
+    names, cw = pool
+    if not cw: return None
+    r = random.random() * cw[-1]
+    raw = names[bisect.bisect_left(cw, r)]
+    # Census names are uppercase; convert to title case ("Smith")
+    return raw.title()
 
 
 def load_hh_housing(hh_zip_path, wanted_serialnos):
@@ -255,6 +352,14 @@ def main():
     download(HH_URL, HH_LOCAL)
     download(SSA_URL, SSA_LOCAL)
     name_pools, ssa_year_min, ssa_year_max = load_ssa_names(SSA_LOCAL)
+    os.makedirs(os.path.dirname(CENSUS_FIRST_LOCAL), exist_ok=True)
+    download(CENSUS_FIRST_URL, CENSUS_FIRST_LOCAL)
+    download(CENSUS_LAST_URL, CENSUS_LAST_LOCAL)
+    sys.stderr.write("Loading Census 2020 name distributions...\n")
+    census_first = load_census_names_by_race(CENSUS_FIRST_LOCAL)
+    census_last = load_census_names_by_race(CENSUS_LAST_LOCAL)
+    sys.stderr.write(f"  first names: {sum(len(d) for d in census_first.values()):,} (name,race) entries\n")
+    sys.stderr.write(f"  last names:  {sum(len(d) for d in census_last.values()):,} (name,race) entries\n")
 
     labels = parse_value_labels(DICT_LOCAL)
     occp_labels = {c: clean_occ(l) for c, l in labels.get("OCCP", {}).items()}
@@ -408,7 +513,9 @@ def main():
         try: age = int(r.get("AGEP", ""))
         except ValueError: continue
         sex = 1 if r.get("SEX") == "1" else 0  # 1=Male, 0=Female
-        first_name = pick_first_name(name_pools, ssa_year_min, ssa_year_max, r.get("SEX", ""), age) or ""
+        race = race_eth(r.get("RAC1P", ""), r.get("HISP", ""))
+        first_name = pick_first_name(name_pools, ssa_year_min, ssa_year_max, r.get("SEX", ""), age, race, census_first) or ""
+        last_name = pick_last_name(race, census_last) or ""
         race = race_eth(r.get("RAC1P", ""), r.get("HISP", ""))
         state = STATE_FIPS.get(r.get("STATE", ""), "Unknown")
         edu = schl_label(r.get("SCHL", ""))
@@ -541,7 +648,7 @@ def main():
             intern(eng_dict, english_ability),
             intern(ten_dict, tenure),
             home_value, monthly_rent, bedrooms,
-            first_name,
+            first_name, last_name,
             intern(puma_dict, puma_name),
             vehicles,
             intern(jwt_dict, commute_mode),
@@ -562,7 +669,7 @@ def main():
             "field_of_degree","industry","is_veteran","is_active_duty","has_disability",
             "citizenship","year_of_entry","language","english_ability","tenure",
             "home_value","monthly_rent","bedrooms",
-            "first_name",
+            "first_name","last_name",
             "puma_name","vehicles","commute_mode","commute_minutes",
             "disability_types","ancestry",
         ],

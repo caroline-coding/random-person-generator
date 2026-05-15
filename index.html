@@ -86,49 +86,14 @@
 
 <script src="data.js"></script>
 <script>
-// ===== Name pools =====
-// First names are baked into each row from SSA's yearly counts (build-time, weighted
-// by frequency, conditioned on birth year + sex). Surnames are drawn from these pools
-// at render time, lightly conditioned on race.
-const SURNAMES = [
-  "Smith","Johnson","Williams","Brown","Jones","Miller","Davis","Wilson","Anderson","Thomas",
-  "Taylor","Moore","Jackson","Martin","Lee","Thompson","White","Harris","Clark","Lewis",
-  "Robinson","Walker","Young","Allen","King","Wright","Scott","Hill","Green","Adams",
-  "Nelson","Baker","Hall","Campbell","Mitchell","Carter","Roberts","Phillips","Evans","Turner",
-  "Parker","Edwards","Collins","Stewart","Morris","Murphy","Cook","Rogers","Morgan","Cooper",
-  "Peterson","Bailey","Reed","Kelly","Howard","Cox","Ward","Richardson","Watson","Brooks",
-  "Wood","James","Bennett","Gray","Hughes","Price","Sanders","Long","Ross","Foster",
-  "Powell","Jenkins","Perry","Russell","Sullivan","Bell","Coleman","Butler","Henderson","Barnes"
-];
-const SURNAMES_HISP = [
-  "Garcia","Rodriguez","Martinez","Hernandez","Lopez","Gonzalez","Perez","Sanchez","Ramirez","Torres",
-  "Flores","Rivera","Gomez","Diaz","Cruz","Reyes","Morales","Ortiz","Gutierrez","Chavez",
-  "Ramos","Ruiz","Alvarez","Mendoza","Vasquez","Castillo","Jimenez","Moreno","Romero","Herrera",
-  "Medina","Aguilar","Vargas","Fernandez","Guzman","Munoz","Salazar","Soto","Delgado","Castro"
-];
-const SURNAMES_ASIAN = [
-  "Nguyen","Kim","Patel","Lee","Tran","Pham","Chen","Wang","Wong","Le",
-  "Liu","Park","Choi","Yang","Singh","Zhang","Shah","Huang","Lin","Cho",
-  "Gupta","Lam","Tang","Khan","Truong","Vu","Sharma","Bhatt","Iyer","Reddy"
-];
-const SURNAMES_BLACK = [
-  "Johnson","Williams","Brown","Jones","Smith","Davis","Jackson","Robinson","Thompson","Harris",
-  "Lewis","Walker","Wright","Young","Anderson","Thomas","White","Mitchell","Scott","Hill",
-  "Carter","Mosley","Washington","Jefferson","Banks","Booker","Dixon","Joseph","Henderson","Bryant"
-];
-
-// First name comes baked into the row (sampled at build time from SSA's yearly baby-name
-// counts using the person's birth year + sex, weighted by frequency). Surname is still
-// drawn here from a race-correlated pool.
-function pickSurname(race) {
-  if (race === "Hispanic") return SURNAMES_HISP[Math.floor(Math.random() * SURNAMES_HISP.length)];
-  if (race === "Asian") return SURNAMES_ASIAN[Math.floor(Math.random() * SURNAMES_ASIAN.length)];
-  if (race === "Black") return SURNAMES_BLACK[Math.floor(Math.random() * SURNAMES_BLACK.length)];
-  return SURNAMES[Math.floor(Math.random() * SURNAMES.length)];
-}
+// First and last names are both baked into each row at build time:
+//   - First name: sampled jointly from SSA's yearly counts P(name | birth year, sex)
+//     and Census 2020 names P(name | race). Marginals over each are approximately right.
+//   - Last name: sampled from Census 2020 names P(name | race), full frequency table.
 function pickName(person) {
   const first = person.first_name || "(unnamed)";
-  return first + " " + pickSurname(person.race);
+  const last = person.last_name || "";
+  return last ? first + " " + last : first;
 }
 
 // ===== Render =====
