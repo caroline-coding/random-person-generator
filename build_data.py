@@ -257,13 +257,28 @@ def load_ssa_names(ssa_zip_path):
 
 
 _first_name_cache = {}
+_name_totals_cache = None
 def pick_first_name(pools, year_min, year_max, sex_str, age, race, census_first):
     """Combine SSA (year+sex) with Census (race) so each marginal is approximately right.
-    weight(name) = SSA_count(name|year,sex) * (Census_count(name|race) + 0.5)
-    Cached per (year, sex, race)."""
+    weight(name) = SSA_count(name|year,sex) * P_Census(race|name)
+
+    Using P(race|name) — a probability bounded to [0,1] — rather than the raw Census
+    count prevents gender-agnostic Census totals from amplifying rare cross-sex names
+    (e.g. "Mary,M" had a tiny SSA count but multiplying by huge Census(MARY,White) gave
+    it outsized weight). Cached per (year, sex, race)."""
+    global _name_totals_cache
+    if _name_totals_cache is None:
+        # Sum each name's count across all race columns to normalize P(race|name)
+        totals = {}
+        for race_col, names in census_first.items():
+            for n, c in names.items():
+                totals[n] = totals.get(n, 0) + c
+        _name_totals_cache = totals
+    name_totals = _name_totals_cache
+
     yr = max(year_min, min(year_max, SURVEY_YEAR - age))
     sex = "M" if sex_str == "1" else "F"
-    race_col = CENSUS_RACE_COL.get(race, 5)  # default to White if unmapped
+    race_col = CENSUS_RACE_COL.get(race, 5)
     key = (yr, sex, race_col)
     pool = _first_name_cache.get(key)
     if pool is None:
@@ -274,12 +289,19 @@ def pick_first_name(pools, year_min, year_max, sex_str, age, race, census_first)
         ssa_names, ssa_cw = ssa_pool
         race_dist = census_first.get(race_col, {})
         names_out, cum = [], []
-        running = 0
+        running = 0.0
         for i, name in enumerate(ssa_names):
             ssa_count = ssa_cw[i] - (ssa_cw[i-1] if i > 0 else 0)
-            census_count = race_dist.get(name.upper(), 0)
-            w = ssa_count * (census_count + 0.5)
-            running += w
+            up = name.upper()
+            census_race_count = race_dist.get(up, 0)
+            name_total = name_totals.get(up, 0)
+            if name_total > 0:
+                # Additive smoothing across the 6 race columns
+                p_race_given_name = (census_race_count + 1.0) / (name_total + 6.0)
+            else:
+                # Name not in Census — assume race-neutral (uniform across 6 races)
+                p_race_given_name = 1.0 / 6.0
+            running += ssa_count * p_race_given_name
             names_out.append(name)
             cum.append(running)
         _first_name_cache[key] = (names_out, cum)
