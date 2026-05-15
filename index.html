@@ -230,6 +230,29 @@ function describeRelation(myRel, theirRel, theirSex) {
   return "Housemate";
 }
 
+// Hand-curated overrides for specific Census occupation labels whose plural form
+// reads awkwardly even after singularize().
+const OCC_OVERRIDES = {
+  "Waiters and Waitresses": (sex) => sex === 1 ? "Waiter" : "Waitress",
+  "Food Service Workers, All Other": "Food service worker",
+  "Miscellaneous Production Workers, Including Equipment Operators and Tenders": "Production worker",
+  "Sales Representatives of Services, Except Advertising, Insurance, Financial Services, and Travel": "Sales representative",
+  "Court Reporters and Simultaneous Captioners": "Court reporter",
+  "Sales Representatives, Wholesale and Manufacturing": "Sales representative",
+  "First-Line Supervisors of Construction Trades and Extraction Workers": "Construction supervisor",
+  "Librarians and Media Collections Specialists": "Librarian",
+  "Business Operations Specialists, All Other": "Business operations specialist",
+  "Secretaries and Administrative Assistants, Except Legal, Medical, and Executive": "Secretary",
+};
+function displayOccupation(occ, sex) {
+  if (!occ) return occ;
+  const override = OCC_OVERRIDES[occ];
+  if (override !== undefined) {
+    return typeof override === "function" ? override(sex) : override;
+  }
+  return singularize(occ);
+}
+
 // Singularize occupation labels. Walks backward and singularizes the last plural
 // word in each "and"/comma-separated segment, so "Brokers and Sales Agents" -> "Broker and Sales Agent".
 function singularizeWord(w) {
@@ -270,6 +293,14 @@ const KEEP_CITY_SUFFIX = new Set([
   "Long Island City","Culver City","Universal City","Johnson City",
 ]);
 
+// Hand-curated overrides for PUMA name prefixes that don't map cleanly via the
+// generic City/County logic (regional commissions, planning districts, etc.).
+const LOCATION_PREFIX_OVERRIDES = [
+  ["North Texas Regional Planning Commission", "Wichita Falls"],
+  ["Northeast Georgia Regional Commission", "Athens"],
+  ["LENOWISCO", "Lee County"],
+];
+
 // PUMA names from Census are verbose (e.g. "Houston City (South Central)--South of US-59,
 // West of I-45 & Inside Loop I-610"). Reduce to a single representative place name.
 // If there are cities, drop counties and pick a city; otherwise pick a county/region.
@@ -277,6 +308,9 @@ const KEEP_CITY_SUFFIX = new Set([
 // PUMA sub-region.
 function simplifyLocation(s) {
   if (!s) return s;
+  for (const [prefix, replacement] of LOCATION_PREFIX_OVERRIDES) {
+    if (s.startsWith(prefix)) return replacement;
+  }
   s = s.replace(/\s*\([^)]*\)/g, "").trim();
   const parts = s.split(/\s*--\s*/);
   let chosen;
@@ -338,7 +372,7 @@ function describeMember(m, myRel) {
   if (hasName) parts.push(rel.toLowerCase());
   parts.push(String(m.age), m.race);
   if (m.occupation) {
-    parts.push(singularize(m.occupation).toLowerCase());
+    parts.push(displayOccupation(m.occupation, m.sex).toLowerCase());
   } else if (m.age < 5) {
     parts.push("not yet in school");
   } else if (m.age < 18) {
@@ -383,7 +417,7 @@ function render(p) {
   // Occupation: if null, show employment status text instead
   let occText, occBig = true;
   if (p.occupation) {
-    occText = singularize(p.occupation);
+    occText = displayOccupation(p.occupation, p.sex);
   } else if (p.age < 16) {
     occText = "—"; occBig = false;
   } else if (p.employment === "Unemployed") {
@@ -423,7 +457,16 @@ function render(p) {
   // Housing
   let housingText = null;
   if (p.tenure) {
-    const parts = [p.tenure.toLowerCase()];
+    const bldg = p.building_type ? p.building_type.toLowerCase() : "home";
+    const parts = [];
+    // "owns mobile home free and clear" / "rents apartment" etc.
+    if (p.tenure.startsWith("Owns ")) {
+      parts.push(`owns ${bldg} ${p.tenure.slice(5).toLowerCase()}`);
+    } else if (p.tenure === "Rents") {
+      parts.push(`rents ${bldg}`);
+    } else {
+      parts.push(`${p.tenure.toLowerCase()} (${bldg})`);
+    }
     if (p.bedrooms > 0) parts.push(`${p.bedrooms} bedroom${p.bedrooms === 1 ? "" : "s"}`);
     if ((p.tenure.startsWith("Owns")) && p.home_value > 0) parts.push(`valued at ${moneyFmt(p.home_value)}`);
     if ((p.tenure === "Rents") && p.monthly_rent > 0) parts.push(`${moneyFmt(p.monthly_rent)}/month`);
@@ -562,6 +605,7 @@ function decodeRow(rowArr, payload) {
   r.language = r.language >= 0 ? payload.languages[r.language] : null;
   r.english_ability = r.english_ability >= 0 ? payload.english_abilities[r.english_ability] : null;
   r.tenure = r.tenure >= 0 ? payload.tenures[r.tenure] : null;
+  r.building_type = r.building_type >= 0 ? payload.building_types[r.building_type] : null;
   r.puma_name = r.puma_name >= 0 ? payload.puma_names[r.puma_name] : null;
   r.commute_mode = r.commute_mode >= 0 ? payload.commute_modes[r.commute_mode] : null;
   r.disability_types = r.disability_types >= 0 ? payload.disability_types_list[r.disability_types] : null;

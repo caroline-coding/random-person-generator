@@ -40,7 +40,7 @@ CENSUS_RACE_COL = {
 DATA_JSON = os.path.join(HERE, "data.json")
 DATA_JS = os.path.join(HERE, "data.js")
 N_TARGET = 30000
-HH_COLS = ("TEN", "VALP", "RNTP", "BDSP", "NP", "VEH")
+HH_COLS = ("TEN", "VALP", "RNTP", "BDSP", "NP", "VEH", "BLD")
 
 KEEP_COLS = [
     "SERIALNO", "AGEP", "SEX", "RAC1P", "HISP", "STATE", "PUMA",
@@ -123,6 +123,14 @@ TEN_MAP = {
     "2": "Owns free and clear",
     "3": "Rents",
     "4": "Occupies without paying rent",
+}
+BLD_MAP = {
+    "01": "Mobile home",
+    "02": "House",
+    "03": "Townhouse",
+    "04": "Apartment", "05": "Apartment", "06": "Apartment",
+    "07": "Apartment", "08": "Apartment", "09": "Apartment",
+    "10": "Boat, RV, or van",
 }
 JWTRNS_MAP = {
     "01": "car or truck",
@@ -495,6 +503,7 @@ def main():
     fod_dict, ind_dict, cit_dict = {}, {}, {}
     lang_dict, eng_dict, ten_dict = {}, {}, {}
     puma_dict, jwt_dict, anc_dict, disab_dict = {}, {}, {}, {}
+    bld_dict = {}
 
     def intern(d, v):
         if v is None: return -1
@@ -623,6 +632,8 @@ def main():
         veh_code = hh.get("VEH", "")
         try: vehicles = int(veh_code) if veh_code and not veh_code.startswith("b") else -1
         except ValueError: vehicles = -1
+        bld_code = hh.get("BLD", "")
+        building_type = BLD_MAP.get(bld_code) if bld_code and not bld_code.startswith("b") else None
 
         # PUMA name
         puma_code = r.get("PUMA", "")
@@ -678,6 +689,7 @@ def main():
             commute_minutes,
             intern(disab_dict, "; ".join(disab_types) if disab_types else None),
             intern(anc_dict, "; ".join(anc_list) if anc_list else None),
+            intern(bld_dict, building_type),
         ])
 
     def invert(d):
@@ -694,7 +706,7 @@ def main():
             "home_value","monthly_rent","bedrooms",
             "first_name","last_name",
             "puma_name","vehicles","commute_mode","commute_minutes",
-            "disability_types","ancestry",
+            "disability_types","ancestry","building_type",
         ],
         "member_fields": ["age","sex","race","occupation","employment","relshipp","income","first_name"],
         "races": invert(races_dict),
@@ -713,6 +725,7 @@ def main():
         "commute_modes": invert(jwt_dict),
         "disability_types_list": invert(disab_dict),
         "ancestries": invert(anc_dict),
+        "building_types": invert(bld_dict),
         "rows": rows,
     }
 
