@@ -81,7 +81,9 @@
     Each card is one real (anonymized) person from the ACS Public Use Microdata Sample,
     so age, race, location, occupation, income, education, marital status, and household
     children all jointly co-occur exactly as they do in the US population. Names are
-    fabricated for display; nothing else is.
+    sampled from SSA and Census name frequencies by birth year, race, and sex (with a
+    hand-curated foreign-name pool when the person was born abroad and speaks a non-English
+    language at home); no real person is depicted.
   </div>
 
 <script src="data.js"></script>
@@ -544,7 +546,11 @@ function render(p) {
   const others = p.hh_members || [];
   let livesWith;
   if (p.relshipp === 37 || p.relshipp === 38) {
-    livesWith = `<div class="hh-empty">In group quarters with ${others.length} other resident${others.length === 1 ? "" : "s"}.</div>`;
+    if (others.length === 0) {
+      livesWith = `<div class="hh-empty">In group quarters; other residents not listed.</div>`;
+    } else {
+      livesWith = `<div class="hh-empty">In group quarters with ${others.length} other resident${others.length === 1 ? "" : "s"}.</div>`;
+    }
   } else if (others.length === 0) {
     livesWith = `<div class="hh-empty">Lives alone.</div>`;
   } else {

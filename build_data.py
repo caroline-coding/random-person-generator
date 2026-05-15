@@ -204,6 +204,121 @@ def clean_occ(label):
     return "".join(out)
 
 
+# Hand-curated foreign name pools, used when a person speaks a non-English language at home
+# (last name) and additionally when foreign-born (first name). Lists are intentionally short
+# and reach for "recognizably common" rather than encyclopedic coverage.
+LANG_NAMES = {
+    "Spanish": {
+        "M": ["Jose","Juan","Carlos","Miguel","Luis","Antonio","Pedro","Javier","Jorge","Manuel","Francisco","Roberto","Diego","Sergio","Eduardo","Alejandro","Ricardo","Fernando","Hector","Daniel","Mateo","Sebastian","Pablo","Andres","Mario","Rafael","Ramon","Esteban","Cristian","Felipe"],
+        "F": ["Maria","Ana","Lucia","Carmen","Sofia","Isabel","Rosa","Elena","Patricia","Gloria","Sandra","Mariana","Adriana","Daniela","Camila","Gabriela","Valentina","Diana","Andrea","Veronica","Beatriz","Catalina","Claudia","Cristina","Esperanza","Guadalupe","Luisa","Mercedes","Pilar","Yolanda"],
+        "L": ["Garcia","Rodriguez","Martinez","Hernandez","Lopez","Gonzalez","Perez","Sanchez","Ramirez","Torres","Flores","Rivera","Gomez","Diaz","Cruz","Reyes","Morales","Ortiz","Gutierrez","Chavez","Ramos","Ruiz","Alvarez","Mendoza","Vasquez","Castillo","Jimenez","Moreno","Romero","Herrera"],
+    },
+    "Chinese": {
+        "M": ["Wei","Ming","Hao","Jun","Chen","Zhi","Bo","Cheng","Feng","Gang","Hong","Jian","Lei","Liang","Long","Peng","Qiang","Tao","Wen","Xin","Yang","Yi","Yong","Zhen","Kai","Xiao","Bin","Hua"],
+        "F": ["Mei","Hui","Lin","Min","Ling","Hua","Yan","Xia","Fang","Li","Na","Ying","Juan","Jing","Hong","Ping","Qing","Wen","Xue","Yu","Yao","Zhen","Shu","Lan","Jie","Xin","Yun"],
+        "L": ["Wang","Li","Zhang","Liu","Chen","Yang","Huang","Zhao","Wu","Zhou","Xu","Sun","Ma","Zhu","Hu","Guo","He","Gao","Lin","Luo","Song","Zheng","Xie","Han","Liang"],
+    },
+    "Tagalog": {
+        "M": ["Jose","Juan","Mario","Antonio","Manuel","Eduardo","Ramon","Carlos","Pedro","Felipe","Jaime","Andres","Francisco","Pablo","Roberto","Vicente","Alfredo","Domingo","Reynaldo","Romeo","Rodrigo","Renato"],
+        "F": ["Maria","Cristina","Ana","Rosa","Carmen","Teresa","Josefina","Elena","Margarita","Aurora","Imelda","Corazon","Mercedes","Lourdes","Norma","Linda","Eva","Estrella","Pilar","Concepcion"],
+        "L": ["Santos","Reyes","Cruz","Bautista","Garcia","Mendoza","Castillo","Dela Cruz","Aquino","Ramos","Gonzales","Aguilar","Marcos","Lim","Tan","Sy","Co","Ang","Rivera","Castro","Domingo","Villanueva","Pascual","Soriano"],
+    },
+    "Vietnamese": {
+        "M": ["An","Bao","Binh","Cuong","Dat","Dung","Duc","Duy","Hai","Hieu","Hoang","Hung","Khoa","Kien","Long","Minh","Nam","Phong","Phuc","Quang","Son","Tan","Thanh","Thinh","Tien","Tuan","Tung","Vinh","Vu"],
+        "F": ["An","Anh","Bich","Diem","Diep","Dung","Giang","Ha","Hanh","Hien","Hoa","Hong","Huong","Lan","Linh","Mai","My","Nga","Ngoc","Nhi","Phuong","Quynh","Tam","Thao","Thu","Trang","Trinh","Tuyet","Yen"],
+        "L": ["Nguyen","Tran","Le","Pham","Hoang","Phan","Vu","Vo","Dang","Bui","Do","Ho","Ngo","Duong","Ly","Truong","Dinh","Mai","Cao","Dao"],
+    },
+    "Korean": {
+        "M": ["Min-jun","Ji-ho","Seo-jun","Do-yoon","Hyun-woo","Joon-ho","Sung-min","Tae-hyun","Yong-ho","Jin-woo","Sang-min","Min-soo","Jae-hyun","Hyun-jin","Jong-su","Kyung-soo","Dong-hyun","Seung-hyun","Woo-jin","Joon-young"],
+        "F": ["So-young","Min-ji","Ji-eun","Hye-jin","Ji-yeon","Eun-ji","Soo-young","Ji-min","Eun-jung","Hae-won","Sun-hee","Hyun-jung","Mi-young","Su-jin","Yu-jin","Hye-won","Mi-na","Soo-jin","Ji-hye","Eun-young"],
+        "L": ["Kim","Lee","Park","Choi","Jung","Kang","Cho","Yoon","Jang","Lim","Han","Oh","Seo","Shin","Kwon","Hwang","Ahn","Song","Yoo","Hong"],
+    },
+    "Hindi": {  # covers Indian languages — Hindi, Urdu, Bengali, Punjabi, Gujarati, Tamil, Telugu, Marathi, etc.
+        "M": ["Raj","Ravi","Amit","Vijay","Sanjay","Anil","Sunil","Ramesh","Suresh","Mahesh","Dinesh","Arjun","Akash","Rohan","Rohit","Karan","Aditya","Vikram","Pradeep","Manoj","Rakesh","Anand","Ashok","Mohan","Deepak","Sachin","Rajesh","Krishna","Naveen","Praveen"],
+        "F": ["Priya","Anjali","Pooja","Sunita","Kavita","Asha","Rekha","Geeta","Lakshmi","Meera","Radha","Sita","Anita","Indira","Maya","Neha","Riya","Diya","Ananya","Aditi","Tara","Padma","Shanti","Deepa","Shilpa","Kavya","Saraswati","Parvati"],
+        "L": ["Patel","Singh","Sharma","Kumar","Shah","Gupta","Reddy","Verma","Mehta","Joshi","Desai","Iyer","Khan","Ahmed","Bhatt","Kapoor","Chopra","Malhotra","Agarwal","Rao","Chandra","Mishra","Tiwari","Yadav","Pandey","Saxena","Banerjee","Chatterjee","Mukherjee"],
+    },
+    "Arabic": {
+        "M": ["Mohammed","Ahmed","Ali","Hassan","Omar","Khaled","Ibrahim","Mahmoud","Mustafa","Abdullah","Yusuf","Hussein","Karim","Amir","Tariq","Samir","Bilal","Faisal","Ziad","Nasser","Walid","Hisham","Rashid"],
+        "F": ["Fatima","Aisha","Amina","Mariam","Layla","Noor","Yasmin","Zaynab","Khadija","Salma","Rania","Hala","Lina","Nour","Sara","Dalia","Reem","Farah","Nadia","Huda","Hanan"],
+        "L": ["Al-Hassan","Hassan","Ahmed","Ali","Hussein","Mohammed","Ibrahim","Mahmoud","Saleh","Rahman","Aziz","Karim","Said","Mansour","Najjar","Haddad","Khoury","Saab","Khalil","Farah","Nasser","Rashid","Hakim","Aboud"],
+    },
+    "Russian": {
+        "M": ["Ivan","Alexander","Sergei","Dmitri","Vladimir","Andrei","Mikhail","Nikolai","Pavel","Anton","Maxim","Igor","Yuri","Boris","Viktor","Alexei","Konstantin","Roman","Stanislav","Artem","Oleg","Vadim","Yevgeny"],
+        "F": ["Anna","Maria","Elena","Olga","Natalia","Tatiana","Irina","Yulia","Ekaterina","Svetlana","Ludmila","Galina","Marina","Sofia","Anastasia","Daria","Vera","Polina","Nadezhda","Valentina","Lyudmila","Oksana"],
+        "L": ["Ivanov","Smirnov","Kuznetsov","Popov","Sokolov","Lebedev","Kozlov","Novikov","Morozov","Petrov","Volkov","Solovyov","Vasilyev","Zaitsev","Pavlov","Semenov","Golubev","Vinogradov","Bogdanov","Vorobyev"],
+    },
+    "Portuguese": {
+        "M": ["Joao","Jose","Antonio","Manuel","Francisco","Carlos","Paulo","Pedro","Luis","Marco","Bruno","Andre","Tiago","Rafael","Daniel","Diego","Eduardo","Fernando","Gabriel","Henrique","Ricardo","Joaquim"],
+        "F": ["Maria","Ana","Beatriz","Carla","Catarina","Cristina","Daniela","Helena","Isabel","Joana","Lara","Leonor","Mariana","Patricia","Rita","Sandra","Sofia","Teresa","Vanessa","Adriana"],
+        "L": ["Silva","Santos","Pereira","Costa","Rodrigues","Martins","Carvalho","Ferreira","Almeida","Lopes","Oliveira","Sousa","Souza","Fernandes","Gomes","Cardoso","Ribeiro","Mendes","Castro","Araujo"],
+    },
+    "French": {
+        "M": ["Jean","Pierre","Michel","Louis","Henri","Marc","Philippe","Antoine","Bernard","Christian","Daniel","Francois","Georges","Jacques","Laurent","Maurice","Olivier","Patrick","Raymond","Stephane","Thierry"],
+        "F": ["Marie","Jeanne","Francoise","Catherine","Isabelle","Sylvie","Nicole","Brigitte","Christine","Martine","Sophie","Helene","Anne","Claire","Camille","Celine","Charlotte","Delphine","Emma","Julie"],
+        "L": ["Martin","Bernard","Dubois","Thomas","Robert","Petit","Durand","Leroy","Moreau","Simon","Laurent","Lefebvre","Bertrand","Roux","Vincent","Fournier","Girard","Bonnet","Dupont","Lambert"],
+    },
+    "Haitian": {
+        "M": ["Jean","Pierre","Marc","Jacques","Michel","Joseph","Daniel","Frantz","Wilson","Patrick","Edwin","Edner","Yves","Ronald","Reynold","Junior","Wendell","Marcel","Garry","Fritz"],
+        "F": ["Marie","Yolette","Nadege","Carmel","Magalie","Ginette","Rose","Therese","Marlene","Sonia","Wideline","Yvonne","Edith","Solange","Suzette","Mireille","Marjorie","Fabiola","Daphnee"],
+        "L": ["Pierre","Jean-Baptiste","Saint-Louis","Joseph","Charles","Louis","Antoine","Augustin","Casimir","Cherubin","Cherestal","Civil","Constant","Eustache","Fontaine","Etienne","Francois","Andre","Bernard"],
+    },
+    "Japanese": {
+        "M": ["Hiroshi","Takeshi","Yuki","Akira","Kenji","Daisuke","Hiroki","Kazuki","Kenta","Naoki","Ryo","Shota","Takashi","Tomohiro","Yusuke","Sho","Taichi","Yuto","Kazuya","Masato"],
+        "F": ["Yuki","Yuko","Yumiko","Sakura","Kaori","Naoko","Mariko","Megumi","Aiko","Akiko","Asuka","Chika","Eri","Hana","Hiroko","Kanako","Keiko","Kumiko","Mayumi","Miho","Sayaka","Tomoko"],
+        "L": ["Sato","Suzuki","Takahashi","Tanaka","Watanabe","Ito","Yamamoto","Nakamura","Kobayashi","Kato","Yoshida","Yamada","Sasaki","Yamaguchi","Saito","Matsumoto","Inoue","Kimura","Hayashi","Shimizu"],
+    },
+    "Polish": {
+        "M": ["Jan","Andrzej","Krzysztof","Stanislaw","Tadeusz","Piotr","Pawel","Marek","Jerzy","Tomasz","Jakub","Mateusz","Wojciech","Marcin","Michal","Adam","Lukasz","Filip","Bartosz","Maciej"],
+        "F": ["Anna","Maria","Katarzyna","Malgorzata","Agnieszka","Krystyna","Barbara","Ewa","Joanna","Magdalena","Elzbieta","Zofia","Teresa","Halina","Janina","Aleksandra","Karolina","Natalia","Monika","Beata"],
+        "L": ["Nowak","Kowalski","Wisniewski","Wojcik","Kowalczyk","Kaminski","Lewandowski","Zielinski","Szymanski","Wozniak","Dabrowski","Kozlowski","Jankowski","Mazur","Wojciechowski","Kwiatkowski","Krawczyk","Kaczmarek","Piotrowski"],
+    },
+    "Italian": {
+        "M": ["Giuseppe","Giovanni","Antonio","Mario","Luigi","Francesco","Angelo","Vincenzo","Pietro","Salvatore","Carlo","Franco","Domenico","Roberto","Alessandro","Marco","Davide","Luca","Andrea","Simone"],
+        "F": ["Maria","Anna","Giuseppina","Rosa","Angela","Giovanna","Teresa","Lucia","Antonietta","Maddalena","Margherita","Caterina","Carmela","Concetta","Francesca","Vittoria","Vincenza","Carla","Federica","Laura"],
+        "L": ["Rossi","Russo","Ferrari","Esposito","Bianchi","Romano","Colombo","Ricci","Marino","Greco","Bruno","Gallo","Conti","De Luca","Mancini","Costa","Giordano","Rizzo","Lombardi","Moretti"],
+    },
+    "German": {
+        "M": ["Hans","Peter","Klaus","Wolfgang","Jurgen","Walter","Helmut","Heinz","Friedrich","Werner","Dieter","Manfred","Thomas","Andreas","Michael","Stefan","Jens","Markus","Sebastian","Christian"],
+        "F": ["Maria","Anna","Petra","Sabine","Birgit","Christa","Brigitte","Helga","Renate","Ursula","Monika","Karin","Hannelore","Doris","Ingrid","Susanne","Andrea","Claudia","Stefanie","Nicole"],
+        "L": ["Muller","Schmidt","Schneider","Fischer","Weber","Meyer","Wagner","Becker","Schulz","Hoffmann","Schafer","Koch","Bauer","Richter","Klein","Wolf","Schroder","Neumann","Schwarz","Zimmermann"],
+    },
+    "Persian": {
+        "M": ["Mohammad","Ali","Reza","Hossein","Amir","Mehdi","Hamid","Ahmad","Saeed","Behrouz","Bijan","Bahram","Cyrus","Darius","Farzad","Hooman","Kamran","Kaveh","Pejman","Shahram"],
+        "F": ["Fatima","Zahra","Maryam","Sara","Setareh","Shirin","Soraya","Yasaman","Roya","Mehri","Mahsa","Leila","Nazanin","Niloufar","Parisa","Roxana","Shadi","Shaghayegh","Shahla","Tara"],
+        "L": ["Khan","Mohammadi","Hosseini","Karimi","Ahmadi","Rahimi","Rezaei","Mousavi","Tehrani","Esfahani","Yazdi","Shirazi","Razavi","Bahrami","Farahani","Jafari","Kamali","Naderi","Rashidi"],
+    },
+    "Greek": {
+        "M": ["Georgios","Yiannis","Konstantinos","Dimitrios","Nikolaos","Christos","Panagiotis","Athanasios","Vasileios","Spyridon","Stavros","Anastasios","Andreas","Apostolos","Pavlos","Kostas","Theodoros","Petros","Manolis"],
+        "F": ["Maria","Eleni","Aikaterini","Vasiliki","Dimitra","Sophia","Anna","Ioanna","Konstantina","Despina","Christina","Athanasia","Stavroula","Athina","Evangelia","Aphrodite","Penelope","Olympia"],
+        "L": ["Papadopoulos","Papandreou","Georgiou","Demetriou","Christodoulou","Karagiannis","Constantinou","Nikolaou","Andreou","Antoniou","Vlachos","Pavlou","Stavrou","Ioannou","Petrou","Markou"],
+    },
+}
+
+LANP_TO_LANG = {
+    "1055":"Haitian",
+    "1110":"German","1120":"German","1125":"German",
+    "1155":"Italian",
+    "1170":"French","1175":"French",
+    "1200":"Spanish",
+    "1210":"Portuguese",
+    "1235":"Greek",
+    "1250":"Russian",
+    "1270":"Polish",
+    "1290":"Persian","1292":"Persian",
+    "1340":"Hindi","1350":"Hindi","1360":"Hindi","1380":"Hindi",
+    "1420":"Hindi","1435":"Hindi","1440":"Hindi","1450":"Hindi",
+    "1500":"Hindi","1530":"Hindi","1540":"Hindi",
+    "1730":"Hindi","1737":"Hindi","1750":"Hindi","1765":"Hindi",
+    "1960":"Vietnamese",
+    "1970":"Chinese","2000":"Chinese","2030":"Chinese","2050":"Chinese",
+    "2560":"Japanese",
+    "2575":"Korean",
+    "2910":"Tagalog","2920":"Tagalog","2950":"Tagalog","3150":"Tagalog","3190":"Tagalog",
+    "4500":"Arabic",
+}
+
+
 def load_census_names_by_race(xlsx_path):
     """Returns {race_col_idx: {NAME_UPPER: count}}.
     Race column indices match CENSUS_RACE_COL values (5..10)."""
@@ -414,7 +529,7 @@ def main():
     tie = 0
     pwgtp_sum = 0
 
-    MEMBER_COLS = ("AGEP","SEX","RAC1P","HISP","OCCP","ESR","RELSHIPP","PINCP")
+    MEMBER_COLS = ("AGEP","SEX","RAC1P","HISP","OCCP","ESR","RELSHIPP","PINCP","LANP","NATIVITY")
 
     def process_household(hh_rows, idx, keep):
         nonlocal tie
@@ -510,12 +625,30 @@ def main():
         if v not in d: d[v] = len(d)
         return d[v]
 
-    def decode_member(m):
+    def pick_first_with_dedup(sex_str, age, race, lang_key, foreign_born, used):
+        """Sample a first name, retrying up to 8 times to avoid HH-internal duplicates."""
+        candidate = ""
+        for _ in range(8):
+            if lang_key and foreign_born:
+                sex_key = "M" if sex_str == "1" else "F"
+                pool = LANG_NAMES[lang_key][sex_key]
+                candidate = random.choice(pool)
+            else:
+                candidate = pick_first_name(name_pools, ssa_year_min, ssa_year_max, sex_str, age, race, census_first) or ""
+            if candidate and candidate not in used:
+                return candidate
+        return candidate  # last fallback (rare; only if pool too small)
+
+    def decode_member(m, used_names):
         try: age = int(m.get("AGEP", ""))
         except ValueError: age = 0
         sex = 1 if m.get("SEX") == "1" else 0
         race = race_eth(m.get("RAC1P", ""), m.get("HISP", ""))
-        first_name = pick_first_name(name_pools, ssa_year_min, ssa_year_max, m.get("SEX", ""), age, race, census_first) or ""
+        m_lanp = m.get("LANP", "")
+        m_lang_key = LANP_TO_LANG.get(m_lanp) if m_lanp and not m_lanp.startswith("b") else None
+        m_foreign_born = m.get("NATIVITY", "") == "2"
+        first_name = pick_first_with_dedup(m.get("SEX",""), age, race, m_lang_key, m_foreign_born, used_names)
+        if first_name: used_names.add(first_name)
         occ_code = m.get("OCCP", "")
         if occ_code and occ_code != "0000" and not occ_code.startswith("b"):
             occ = occp_labels.get(occ_code)
@@ -546,8 +679,18 @@ def main():
         except ValueError: continue
         sex = 1 if r.get("SEX") == "1" else 0  # 1=Male, 0=Female
         race = race_eth(r.get("RAC1P", ""), r.get("HISP", ""))
-        first_name = pick_first_name(name_pools, ssa_year_min, ssa_year_max, r.get("SEX", ""), age, race, census_first) or ""
-        last_name = pick_last_name(race, census_last) or ""
+        # Foreign-name overrides: last name when non-English at home; first name additionally
+        # if foreign-born.
+        p_lanp = r.get("LANP", "")
+        lang_key = LANP_TO_LANG.get(p_lanp) if p_lanp and not p_lanp.startswith("b") else None
+        foreign_born = r.get("NATIVITY", "") == "2"
+        used_names = set()
+        first_name = pick_first_with_dedup(r.get("SEX",""), age, race, lang_key, foreign_born, used_names)
+        if first_name: used_names.add(first_name)
+        if lang_key:
+            last_name = random.choice(LANG_NAMES[lang_key]["L"])
+        else:
+            last_name = pick_last_name(race, census_last) or ""
         race = race_eth(r.get("RAC1P", ""), r.get("HISP", ""))
         state = STATE_FIPS.get(r.get("STATE", ""), "Unknown")
         edu = schl_label(r.get("SCHL", ""))
@@ -581,7 +724,7 @@ def main():
             own_kids = -1  # unknown for unmarried partner / other relative / nonrelative / GQ
 
         hh_income = r.get("__hh_income", 0)
-        hh_others = [decode_member(m) for m in r.get("__hh_others", [])]
+        hh_others = [decode_member(m, used_names) for m in r.get("__hh_others", [])]
 
         # Field of degree (only meaningful for bachelor's+)
         fod_code = r.get("FOD1P", "")
