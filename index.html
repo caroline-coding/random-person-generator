@@ -293,6 +293,31 @@ function singularize(s) {
     .join("");
 }
 
+// PUMA names from Census are verbose (e.g. "Houston City (South Central)--South of US-59,
+// West of I-45 & Inside Loop I-610"). Reduce to a single representative place name.
+// If there are cities, drop counties and pick a city; otherwise pick a county/region.
+// Approximate by design — picks the first listed entry rather than mapping the specific
+// PUMA sub-region.
+function simplifyLocation(s) {
+  if (!s) return s;
+  s = s.replace(/\s*\([^)]*\)/g, "").trim();
+  const parts = s.split(/\s*--\s*/);
+  let chosen;
+  if (parts.length > 1) {
+    const withCities = parts.find(p => /\b(?:city|cities|town|towns)\b/i.test(p));
+    chosen = withCities || parts[0];
+  } else {
+    chosen = parts[0];
+  }
+  // Strip a trailing collective designator like " Cities" / " Counties" / " Parishes"
+  chosen = chosen.replace(/\s+(?:Cities|Counties|Towns|Boroughs|Parishes)$/i, "").trim();
+  // Pick the first entry from comma/ampersand-separated lists
+  let first = chosen.split(/\s*[&,]\s*/)[0].trim();
+  // Strip the singular designator on the picked entry
+  first = first.replace(/\s+(?:City|County|Town|Township|CDP|Borough|Parish)$/i, "").trim();
+  return first;
+}
+
 // Census industry labels can be long. Strip parentheticals, "Except X" / "All Other" /
 // "N.e.c." qualifiers, trailing ", and ..." list clauses, and orphan tail items.
 function simplifyIndustry(s) {
@@ -436,8 +461,8 @@ function render(p) {
     disabilityText = "Yes";
   }
 
-  // Location: PUMA name + state, falls back to state alone
-  const locationText = p.puma_name ? `${p.puma_name}, ${p.state}` : p.state;
+  // Location: PUMA name + state, shortened. Falls back to state alone.
+  const locationText = p.puma_name ? `${simplifyLocation(p.puma_name)}, ${p.state}` : p.state;
 
   // Vehicles
   let vehiclesText = null;
