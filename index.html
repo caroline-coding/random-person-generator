@@ -258,6 +258,18 @@ function singularize(s) {
     .join("");
 }
 
+// Cities whose actual name ends in "City". Don't strip the "City" suffix for these.
+const KEEP_CITY_SUFFIX = new Set([
+  "Salt Lake City","Oklahoma City","Kansas City","Jersey City","Atlantic City",
+  "Sioux City","Iowa City","Carson City","Bay City","Texas City","Daly City",
+  "Yuba City","Redwood City","Park City","Crescent City","Garden City",
+  "Lake City","Dodge City","Boulder City","Cedar City","Foster City",
+  "Mason City","Union City","University City","National City","Lincoln City",
+  "Cathedral City","Sun City","Bullhead City","Junction City","Plant City",
+  "Mountain City","Center City","Pine City","Battery Park City",
+  "Long Island City","Culver City","Universal City","Johnson City",
+]);
+
 // PUMA names from Census are verbose (e.g. "Houston City (South Central)--South of US-59,
 // West of I-45 & Inside Loop I-610"). Reduce to a single representative place name.
 // If there are cities, drop counties and pick a city; otherwise pick a county/region.
@@ -278,8 +290,12 @@ function simplifyLocation(s) {
   chosen = chosen.replace(/\s+(?:Cities|Counties|Towns|Boroughs|Parishes)$/i, "").trim();
   // Pick the first entry from comma/ampersand-separated lists
   let first = chosen.split(/\s*[&,]\s*/)[0].trim();
-  // Strip the singular designator on the picked entry
-  first = first.replace(/\s+(?:City|County|Town|Township|CDP|Borough|Parish)$/i, "").trim();
+  // Strip non-City singular designators always
+  first = first.replace(/\s+(?:County|Town|Township|CDP|Borough|Parish)$/i, "").trim();
+  // Strip " City" only when the name isn't a real "X City"-style city
+  if (/\s+City$/i.test(first) && !KEEP_CITY_SUFFIX.has(first)) {
+    first = first.replace(/\s+City$/i, "").trim();
+  }
   return first;
 }
 
@@ -315,9 +331,12 @@ function simplifyIndustry(s) {
 }
 
 function describeMember(m, myRel) {
-  // m: decoded member object {age, sex, race, occupation, employment, relshipp, income}
+  // m: decoded member object {age, sex, race, occupation, employment, relshipp, income, first_name}
   const rel = describeRelation(myRel, m.relshipp, m.sex);
-  const parts = [String(m.age), m.race];
+  const hasName = !!m.first_name;
+  const parts = [];
+  if (hasName) parts.push(rel.toLowerCase());
+  parts.push(String(m.age), m.race);
   if (m.occupation) {
     parts.push(singularize(m.occupation).toLowerCase());
   } else if (m.age < 5) {
@@ -331,7 +350,8 @@ function describeMember(m, myRel) {
   } else if (m.employment === "Not in labor force") {
     parts.push("not in the labor force");
   }
-  return `<strong>${rel}</strong> — ${parts.join(", ")}`;
+  const headline = hasName ? m.first_name : rel;
+  return `<strong>${headline}</strong> — ${parts.join(", ")}`;
 }
 
 function describeKids(person) {
@@ -461,7 +481,6 @@ function render(p) {
     ["Race / ethnicity", p.race, ""],
     ["Location", locationText, ""],
     ["Citizenship", citText, ""],
-    ancestryText ? ["Ancestry", ancestryText, ""] : null,
     langText ? ["Language at home", langText, ""] : null,
     ["Occupation", occText, occBig ? "big" : "dim"],
     industryText ? ["Industry", industryText, ""] : null,

@@ -484,6 +484,7 @@ def main():
         except ValueError: age = 0
         sex = 1 if m.get("SEX") == "1" else 0
         race = race_eth(m.get("RAC1P", ""), m.get("HISP", ""))
+        first_name = pick_first_name(name_pools, ssa_year_min, ssa_year_max, m.get("SEX", ""), age, race, census_first) or ""
         occ_code = m.get("OCCP", "")
         if occ_code and occ_code != "0000" and not occ_code.startswith("b"):
             occ = occp_labels.get(occ_code)
@@ -505,7 +506,7 @@ def main():
             intern(races_dict, race),
             intern(occ_dict, occ),
             intern(emp_dict, emp),
-            rel, inc,
+            rel, inc, first_name,
         ]
 
     rows = []
@@ -673,7 +674,7 @@ def main():
             "puma_name","vehicles","commute_mode","commute_minutes",
             "disability_types","ancestry",
         ],
-        "member_fields": ["age","sex","race","occupation","employment","relshipp","income"],
+        "member_fields": ["age","sex","race","occupation","employment","relshipp","income","first_name"],
         "races": invert(races_dict),
         "states": invert(states_dict),
         "educations": invert(edu_dict),
