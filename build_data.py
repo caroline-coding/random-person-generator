@@ -22,13 +22,16 @@ SURVEY_YEAR = 2022  # midpoint of 2020-2024 5-year ACS
 DATA_JSON = os.path.join(HERE, "data.json")
 DATA_JS = os.path.join(HERE, "data.js")
 N_TARGET = 30000
-HH_COLS = ("TEN", "VALP", "RNTP", "BDSP", "NP")
+HH_COLS = ("TEN", "VALP", "RNTP", "BDSP", "NP", "VEH")
 
 KEEP_COLS = [
     "SERIALNO", "AGEP", "SEX", "RAC1P", "HISP", "STATE", "PUMA",
     "SCHL", "FOD1P", "MAR", "OCCP", "INDP", "PINCP", "WAGP", "ESR",
     "OC", "RELSHIPP", "PWGTP",
     "MIL", "DIS", "CIT", "NATIVITY", "YOEP", "LANP", "ENG",
+    "JWTRNS", "JWMNP",
+    "DEAR", "DEYE", "DOUT", "DPHY", "DREM", "DDRS",
+    "ANC1P", "ANC2P",
 ]
 
 
@@ -103,6 +106,28 @@ TEN_MAP = {
     "3": "Rents",
     "4": "Occupies without paying rent",
 }
+JWTRNS_MAP = {
+    "01": "car or truck",
+    "02": "bus",
+    "03": "subway",
+    "04": "commuter rail",
+    "05": "light rail or streetcar",
+    "06": "ferry",
+    "07": "taxi or ride-hail",
+    "08": "motorcycle",
+    "09": "bicycle",
+    "10": "walking",
+    "11": "Works from home",
+    "12": "other",
+}
+DISAB_KINDS = (
+    ("DEAR", "hearing"),
+    ("DEYE", "vision"),
+    ("DPHY", "mobility"),
+    ("DREM", "cognitive"),
+    ("DOUT", "independent-living"),
+    ("DDRS", "self-care"),
+)
 
 _GRADE_NAMES = {
     4:"1st grade", 5:"2nd grade", 6:"3rd grade", 7:"4th grade",
@@ -236,6 +261,19 @@ def main():
     indp_labels = {c: clean_occ(l) for c, l in labels.get("INDP", {}).items()}
     fod_labels = {c: l for c, l in labels.get("FOD1P", {}).items()}
     lanp_labels = {c: l for c, l in labels.get("LANP", {}).items()}
+    anc_labels = {c: l for c, l in labels.get("ANC1P", {}).items()}
+
+    # PUMA name lookup (STATE_FIPS, PUMA_CODE) -> name
+    puma_names = {}
+    puma_csv = os.path.join(HERE, "puma_names.csv")
+    if os.path.exists(puma_csv):
+        with open(puma_csv, encoding="utf-8") as f:
+            r = csv.DictReader(f)
+            for row in r:
+                puma_names[(row["STATE"], row["PUMA"])] = row["NAME"]
+        sys.stderr.write(f"PUMA name lookup loaded: {len(puma_names):,} entries\n")
+    else:
+        sys.stderr.write(f"WARNING: {puma_csv} not found — PUMA names disabled\n")
 
     heap = []  # (key, tie, raw_row + HH context)
     tie = 0
@@ -329,6 +367,7 @@ def main():
     mar_dict, occ_dict, emp_dict = {}, {}, {}
     fod_dict, ind_dict, cit_dict = {}, {}, {}
     lang_dict, eng_dict, ten_dict = {}, {}, {}
+    puma_dict, jwt_dict, anc_dict, disab_dict = {}, {}, {}, {}
 
     def intern(d, v):
         if v is None: return -1
@@ -451,6 +490,35 @@ def main():
         except ValueError: monthly_rent = 0
         try: bedrooms = int(hh.get("BDSP", "") or 0)
         except ValueError: bedrooms = 0
+        veh_code = hh.get("VEH", "")
+        try: vehicles = int(veh_code) if veh_code and not veh_code.startswith("b") else -1
+        except ValueError: vehicles = -1
+
+        # PUMA name
+        puma_code = r.get("PUMA", "")
+        st_code = r.get("STATE", "")
+        puma_name = puma_names.get((st_code, puma_code))
+
+        # Commute
+        jwt_code = r.get("JWTRNS", "")
+        commute_mode = JWTRNS_MAP.get(jwt_code) if jwt_code and not jwt_code.startswith("b") else None
+        try:
+            jwmnp_raw = r.get("JWMNP", "")
+            commute_minutes = int(jwmnp_raw) if jwmnp_raw and not jwmnp_raw.startswith("b") and jwmnp_raw != "888" else 0
+        except ValueError:
+            commute_minutes = 0
+
+        # Disability dimensions
+        disab_types = [label for code_name, label in DISAB_KINDS if r.get(code_name, "") == "1"]
+
+        # Ancestry
+        anc_list = []
+        for col in ("ANC1P", "ANC2P"):
+            code = r.get(col, "")
+            if not code or code in ("999",): continue
+            label = anc_labels.get(code)
+            if label and label not in ("Not reported", "Not specified", "Uncodable", "Other groups", "Other Subsaharan African", "United States"):
+                anc_list.append(label)
 
         rows.append([
             age, sex,
@@ -474,6 +542,12 @@ def main():
             intern(ten_dict, tenure),
             home_value, monthly_rent, bedrooms,
             first_name,
+            intern(puma_dict, puma_name),
+            vehicles,
+            intern(jwt_dict, commute_mode),
+            commute_minutes,
+            intern(disab_dict, "; ".join(disab_types) if disab_types else None),
+            intern(anc_dict, "; ".join(anc_list) if anc_list else None),
         ])
 
     def invert(d):
@@ -489,6 +563,8 @@ def main():
             "citizenship","year_of_entry","language","english_ability","tenure",
             "home_value","monthly_rent","bedrooms",
             "first_name",
+            "puma_name","vehicles","commute_mode","commute_minutes",
+            "disability_types","ancestry",
         ],
         "member_fields": ["age","sex","race","occupation","employment","relshipp","income"],
         "races": invert(races_dict),
@@ -503,6 +579,10 @@ def main():
         "languages": invert(lang_dict),
         "english_abilities": invert(eng_dict),
         "tenures": invert(ten_dict),
+        "puma_names": invert(puma_dict),
+        "commute_modes": invert(jwt_dict),
+        "disability_types_list": invert(disab_dict),
+        "ancestries": invert(anc_dict),
         "rows": rows,
     }
 

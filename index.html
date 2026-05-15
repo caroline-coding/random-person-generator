@@ -397,8 +397,36 @@ function render(p) {
   if (p.is_active_duty) veteranText = "Currently on active duty";
   else if (p.is_veteran) veteranText = "Yes, served on active duty";
 
-  // Disability
-  const disabilityText = p.has_disability ? "Yes" : null;
+  // Disability — list specific types if available
+  let disabilityText = null;
+  if (p.disability_types) {
+    disabilityText = "Yes — " + p.disability_types.replace(/;/g, ",") + (p.disability_types.includes(";") ? "" : "");
+  } else if (p.has_disability) {
+    disabilityText = "Yes";
+  }
+
+  // Location: PUMA name + state, falls back to state alone
+  const locationText = p.puma_name ? `${p.puma_name}, ${p.state}` : p.state;
+
+  // Vehicles
+  let vehiclesText = null;
+  if (p.vehicles >= 0) {
+    if (p.vehicles === 0) vehiclesText = "None";
+    else if (p.vehicles === 1) vehiclesText = "1 vehicle";
+    else if (p.vehicles >= 6) vehiclesText = "6 or more vehicles";
+    else vehiclesText = `${p.vehicles} vehicles`;
+  }
+
+  // Commute
+  let commuteText = null;
+  if (p.commute_mode) {
+    if (p.commute_mode === "Works from home") commuteText = "Works from home";
+    else if (p.commute_minutes > 0) commuteText = `${p.commute_minutes} min by ${p.commute_mode}`;
+    else commuteText = `By ${p.commute_mode}`;
+  }
+
+  // Ancestry
+  const ancestryText = p.ancestry || null;
 
   // Industry
   const industryText = p.industry ? singularize(p.industry) : null;
@@ -410,11 +438,13 @@ function render(p) {
     ["Age", `${p.age} years old`, "big"],
     ["Sex", sex, ""],
     ["Race / ethnicity", p.race, ""],
-    ["State", p.state, ""],
+    ["Location", locationText, ""],
     ["Citizenship", citText, ""],
+    ancestryText ? ["Ancestry", ancestryText, ""] : null,
     langText ? ["Language at home", langText, ""] : null,
     ["Occupation", occText, occBig ? "big" : "dim"],
     industryText ? ["Industry", industryText, ""] : null,
+    commuteText ? ["Commute", commuteText, ""] : null,
     ["Employment status", empText, ""],
     ["Annual income", incomeText, "big"],
     ["Household income", hhIncomeText, ""],
@@ -422,8 +452,9 @@ function render(p) {
     fodText ? ["Field of degree", fodText, ""] : null,
     ["Marital status", marText, ""],
     housingText ? ["Housing", housingText, ""] : null,
+    vehiclesText ? ["Vehicles", vehiclesText, ""] : null,
     veteranText ? ["Veteran", veteranText, ""] : null,
-    disabilityText ? ["Has a disability", disabilityText, ""] : null,
+    disabilityText ? ["Disability", disabilityText, ""] : null,
   ].filter(Boolean);
 
   // "Lives with" section
@@ -491,6 +522,10 @@ function decodeRow(rowArr, payload) {
   r.language = r.language >= 0 ? payload.languages[r.language] : null;
   r.english_ability = r.english_ability >= 0 ? payload.english_abilities[r.english_ability] : null;
   r.tenure = r.tenure >= 0 ? payload.tenures[r.tenure] : null;
+  r.puma_name = r.puma_name >= 0 ? payload.puma_names[r.puma_name] : null;
+  r.commute_mode = r.commute_mode >= 0 ? payload.commute_modes[r.commute_mode] : null;
+  r.disability_types = r.disability_types >= 0 ? payload.disability_types_list[r.disability_types] : null;
+  r.ancestry = r.ancestry >= 0 ? payload.ancestries[r.ancestry] : null;
   // Decode household members
   const mf = payload.member_fields;  // ["age","sex","race","occupation","employment","relshipp","income"]
   r.hh_members = (r.hh_members || []).map(mt => {
