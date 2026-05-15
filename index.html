@@ -293,6 +293,37 @@ function singularize(s) {
     .join("");
 }
 
+// Census industry labels can be long. Strip parentheticals, "Except X" / "All Other" /
+// "N.e.c." qualifiers, trailing ", and ..." list clauses, and orphan tail items.
+function simplifyIndustry(s) {
+  if (!s) return s;
+  s = s.replace(/\s*\([^)]*\)/g, "");                 // parentheticals
+  s = s.replace(/,\s*except[^,]*$/i, "");             // ", Except X"
+  s = s.replace(/,\s*n\.\s*e\.\s*c\.?$/i, "");        // ", N.e.c."
+  s = s.replace(/,\s*all other$/i, "");               // ", All Other"
+  s = s.replace(/,\s+and\s+.*$/, "");                 // ", and Other X, and Y..."
+  s = s.replace(/\s+/g, " ").trim();
+  // Compound "X and Y": keep only X if X is a clear noun phrase (>=2 words,
+  // last word ends in a noun-shaped suffix — excludes adjective/gerund endings).
+  if (s.length > 25) {
+    const idx = s.indexOf(" and ");
+    if (idx > 0) {
+      const first = s.slice(0, idx);
+      const words = first.split(/\s+/);
+      const lw = words[words.length - 1];
+      const nouny = /(s|tion|ation|ity|ment|ness|ence|ance|er|or|ist)$/i.test(lw) && !/(ous|al|ic|ive|ed|ing|less|ful)$/i.test(lw);
+      if (words.length >= 2 && nouny) s = first;
+    }
+  }
+  // Iteratively strip orphan tail items: ", X" or ", X X" (capitalized short clauses)
+  let prev = "";
+  while (prev !== s) {
+    prev = s;
+    s = s.replace(/,\s+[A-Z][\w']*(\s+[A-Z][\w']*)?$/, "");
+  }
+  return s;
+}
+
 function describeMember(m, myRel) {
   // m: decoded member object {age, sex, race, occupation, employment, relshipp, income}
   const rel = describeRelation(myRel, m.relshipp, m.sex);
@@ -429,7 +460,7 @@ function render(p) {
   const ancestryText = p.ancestry || null;
 
   // Industry
-  const industryText = p.industry ? singularize(p.industry) : null;
+  const industryText = p.industry ? singularize(simplifyIndustry(p.industry)) : null;
 
   // Field of degree (only meaningful for bachelor's+)
   const fodText = p.field_of_degree || null;
